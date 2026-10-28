@@ -123,3 +123,22 @@ theorem readBE_iff (w : Nat) (b : List UInt8) (n : Nat) (r : List UInt8) :
 theorem readBE_append (w n : Nat) (r : List UInt8) (hn : n < 256 ^ w) :
     readBE w (beBytes w n ++ r) = some (n, r) :=
   (readBE_iff _ _ _ _).mpr ⟨hn, rfl⟩
+
+theorem guard_some (p : Prop) [Decidable p] (u : Unit) :
+    (guard p : Option Unit) = some u ↔ p := by
+  unfold guard
+  split <;> simp_all [failure, pure]
+
+theorem take?_append' (w : Nat) (c r : List UInt8) (h : c.length = w) :
+    take? w (c ++ r) = some (c, r) :=
+  (take?_eq _ _ _ _).mpr ⟨h, rfl⟩
+
+theorem beBytes_one (a : Nat) (h : a < 256) : beBytes 1 a = [a.toUInt8] := by
+  simp [beBytes, Nat.mod_eq_of_lt h]
+
+theorem readBE_one (a : UInt8) (r : List UInt8) : readBE 1 (a :: r) = some (a.toNat, r) := by
+  have := readBE_append 1 a.toNat r (by simpa using a.toNat_lt)
+  rw [beBytes_one _ a.toNat_lt] at this
+  simpa using this
+
+end SqliteProofs

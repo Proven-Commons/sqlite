@@ -112,4 +112,28 @@ theorem varintValue_split (pre : List UInt8) (x : UInt8)
     have hx : x.toNat < 128 := by omega
     simp [f7, List.foldl_append, Nat.mod_eq_of_lt hx]
 
+theorem readVarint_iff (b : List UInt8) (v k : Nat) (rest : List UInt8) :
+    Sqlite.readVarint b = some (v, k, rest) ↔
+      ∃ bs, Varint bs ∧ varintValue bs = v ∧ bs.length = k ∧ b = bs ++ rest := by
+  constructor
+  · intro h
+    obtain ⟨pre, x, rfl, hpre, hlen, hcase⟩ := go_some b 0 0 v k rest (by omega) h
+    have hc : pre.length = 8 ∨ pre.length < 8 ∧ x.toNat < 128 := by omega
+    refine ⟨pre ++ [x], (varint_split _).2 ⟨pre, x, rfl, hpre, hc⟩, ?_, ?_, by simp⟩
+    · rw [varintValue_split pre x hc]
+      rcases hcase with ⟨h1, h2, _⟩ | ⟨h1, _, h3, _⟩
+      · rw [ite_eq_left (by omega), h2]
+      · rw [ite_eq_right (by omega), h3]
+    · simp only [List.length_append, List.length_singleton]
+      omega
+  · rintro ⟨bs, hv, rfl, rfl, rfl⟩
+    obtain ⟨pre, x, rfl, hpre, hc⟩ := (varint_split _).1 hv
+    show readVarint.go 0 0 _ = _
+    rw [List.append_assoc, List.singleton_append,
+      go_run pre x rest 0 0 hpre (by omega), varintValue_split pre x hc]
+    simp only [Nat.zero_add, List.length_append, List.length_singleton]
+    rcases hc with h | ⟨h, hx⟩
+    · rw [ite_eq_left h, ite_eq_left h, h]
+    · rw [ite_eq_right (by omega), ite_eq_left hx, ite_eq_right (by omega)]
+
 end SqliteProofs
