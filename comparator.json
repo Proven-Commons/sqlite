@@ -1,0 +1,9 @@
+{
+  "challenge_module": "Spec",
+  "solution_module": "Proofs",
+  "theorem_names": [
+    "Spec.readVarint_iff", "Spec.readHeader_iff", "Spec.readPage_iff", "Spec.readPage_inside",
+    "Spec.readRecord_iff", "Spec.examples", "Spec.rejects"
+  ],
+  "permitted_axioms": ["propext", "Quot.sound", "Classical.choice"]
+}
