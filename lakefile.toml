@@ -1,4 +1,5 @@
 name = "sqlite"
+license = "Apache-2.0"
 version = "0.1.0"
 defaultTargets = ["Sqlite", "Spec", "Proofs", "sqlite"]
 
