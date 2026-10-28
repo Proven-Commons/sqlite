@@ -1,0 +1,16 @@
+name = "sqlite"
+version = "0.1.0"
+defaultTargets = ["Sqlite", "Spec", "Proofs", "sqlite"]
+
+[[lean_lib]]
+name = "Sqlite"
+
+[[lean_lib]]
+name = "Spec"
+
+[[lean_lib]]
+name = "Proofs"
+
+[[lean_exe]]
+name = "sqlite"
+root = "Main"
