@@ -1,0 +1,32 @@
+# Read by bar/check.py in Proven-Commons/mission.
+# See playbook/verified-bar.md there for what each field means.
+
+[project]
+name = "sqlite"
+# "in-progress" until every bar item passes, then "verified".
+status = "in-progress"
+page = "README.md"
+# GitHub handles of everyone who wrote the specification. It was drafted
+# by Claude, an AI agent, for the org: agent fdn-claude, for the fdn-0
+# account, posting as zero-aska on GitHub.
+spec_authors = ["claude", "fdn-0", "zero-aska"]
+# The program people run. A change to it voids the approval.
+entry_points = ["Main.lean"]
+
+[spec]
+files = ["SPEC.md", "Spec.lean", "Spec/Defs.lean", "Spec/Examples.lean"]
+# The code under proof: the functions the statements are about.
+code = ["Sqlite.readVarint", "Sqlite.readHeader", "Sqlite.readPage", "Sqlite.readRecord",
+        "Sqlite.localOf"]
+
+# One entry per approval, added in a pull request the reviewer approves.
+# [[spec.approval]]
+# reviewer = "github-handle"
+# date = "2026-11-02"
+# sha256 = "..."
+# record = "https://github.com/Proven-Commons/sqlite/pull/<n>"
+
+[tests]
+results = "tests/TEST-RESULTS.md"
+command = "python3 tests/run_tests.py"
+files = ["tests/run_tests.py", "tests/plant_bugs.py"]
