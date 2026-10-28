@@ -45,7 +45,7 @@ The statements are in `Spec.lean`. The definitions they use are in `Spec/Defs.le
 | The record reader accepts exactly a record of 2.1 and gives its values. | `Spec.readRecord_iff` |
 | Examples worked by hand, and the header SQLite 3.45.1 wrote for a real database, read field by field. Thirteen inputs that each break a rule are refused. | `Spec.examples`, `Spec.rejects` |
 
-The headers this reader accepts are those whose page size is a power of two from 512 to 65536, whose read version is 1 or 2, whose usable size is at least 480, whose payload fractions are 64, 32 and 32, whose schema format is 0 to 4, whose text encoding is 1, 2 or 3, and whose 20 reserved bytes are zero.
+The headers this reader accepts are those whose page size is a power of two from 512 to 65536, whose read version is 1 or 2, whose usable size is at least 480, whose payload fractions are 64, 32 and 32, whose schema format is 0 to 4, whose text encoding is 1, 2 or 3 (or 0 in a database with no schema yet, as SQLite writes it), and whose 20 reserved bytes are zero.
 
 ## What is not proved
 

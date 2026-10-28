@@ -93,7 +93,9 @@ def headerBytes (h : Header) : List UInt8 :=
     - a usable size of at least 480 (1.3.4);
     - schema format 0 to 4 (1.3.10: formats 1 to 4, and 0 for a database
       with no schema);
-    - text encoding 1, 2 or 3 (1.3.13);
+    - text encoding 1, 2 or 3 (1.3.13), or 0 when the schema format is 0:
+      SQLite writes both as 0 while a database has no schema, so no
+      text has been stored yet;
     - every field small enough for its bytes. -/
 def HeaderValid (h : Header) : Prop :=
   (∃ k, 9 ≤ k ∧ k ≤ 16 ∧ h.pageSize = 2 ^ k) ∧
@@ -102,7 +104,8 @@ def HeaderValid (h : Header) : Prop :=
   h.changeCounter < 2 ^ 32 ∧ h.databaseSize < 2 ^ 32 ∧ h.freelistTrunk < 2 ^ 32 ∧
   h.freelistCount < 2 ^ 32 ∧ h.schemaCookie < 2 ^ 32 ∧ h.schemaFormat ≤ 4 ∧
   h.cacheSize < 2 ^ 32 ∧ h.largestRoot < 2 ^ 32 ∧
-  (h.textEncoding = 1 ∨ h.textEncoding = 2 ∨ h.textEncoding = 3) ∧
+  (h.textEncoding = 1 ∨ h.textEncoding = 2 ∨ h.textEncoding = 3 ∨
+    h.textEncoding = 0 ∧ h.schemaFormat = 0) ∧
   h.userVersion < 2 ^ 32 ∧ h.incrementalVacuum < 2 ^ 32 ∧ h.applicationId < 2 ^ 32 ∧
   h.versionValidFor < 2 ^ 32 ∧ h.sqliteVersion < 2 ^ 32
 

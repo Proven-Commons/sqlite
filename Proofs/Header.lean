@@ -61,7 +61,7 @@ theorem readHeader_some (file : List UInt8) (h : Header) (H : readHeader file = 
   refine ⟨?_, r, ?_⟩
   · simp only [HeaderValid, Nat.reducePow]
     exact ⟨(pageSizeOk_iff _).1 hok, hwv, hrv', hres, hus, hcc, hds, hft, hfc, hsc, hsf', hcs,
-      hlr, or_assoc.1 hte', huv, hiv, hai, hvv, hsv⟩
+      hlr, by omega, huv, hiv, hai, hvv, hsv⟩
   · simp only [headerBytes, List.append_assoc, beBytes_one _ hwv, beBytes_one _ hrv,
       beBytes_one _ hres, pageSize_code ps hps, List.cons_append, List.nil_append]
 
@@ -77,7 +77,8 @@ theorem readHeader_bytes (h : Header) (hv : HeaderValid h) (rest : List UInt8) :
       rw [h3]; exact Nat.pow_le_pow_right (by decide) h2
     split <;> simp only [Nat.reducePow] <;> omega
   have hrv1 : h.readVersion < 256 := by omega
-  have hte' : (h.textEncoding = 1 ∨ h.textEncoding = 2) ∨ h.textEncoding = 3 := or_assoc.2 hte
+  have hte' : ((h.textEncoding = 1 ∨ h.textEncoding = 2) ∨ h.textEncoding = 3) ∨
+      h.textEncoding = 0 ∧ h.schemaFormat = 0 := by omega
   have b4 : ∀ n, n < 2 ^ 32 → n < 256 ^ 4 := fun n h => by simpa using h
   unfold readHeader headerBytes
   simp only [bind, List.append_assoc, take?_append' 16 magic _ rfl, Option.bind_some,

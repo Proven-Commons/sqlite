@@ -76,7 +76,8 @@ def readHeader (file : List UInt8) : Option Header := do
   let (versionValidFor, r) ← readBE 4 r
   let (sqliteVersion, _) ← readBE 4 r
   guard (pageSizeOk pageSize && (rv == 1 || rv == 2) && 480 ≤ pageSize - res &&
-    schemaFormat ≤ 4 && (textEncoding == 1 || textEncoding == 2 || textEncoding == 3))
+    schemaFormat ≤ 4 && (textEncoding == 1 || textEncoding == 2 || textEncoding == 3 ||
+      textEncoding == 0 && schemaFormat == 0))
   pure { pageSize, writeVersion := wv, readVersion := rv, reserved := res, changeCounter,
          databaseSize, freelistTrunk, freelistCount, schemaCookie, schemaFormat, cacheSize,
          largestRoot, textEncoding, userVersion, incrementalVacuum, applicationId,

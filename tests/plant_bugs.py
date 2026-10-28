@@ -12,9 +12,12 @@ one failure. The unchanged copy must give none. A bug that stops the
 executable from building is not a catch: the tests then give up, and
 the bug counts as missed. So is any run that gives up (its record shows
 `- Failures: 1 (why)`), a run that dies without writing its record, and
-one whose exit status does not match the failures it records. The tests
-build only the executable (`lake build sqlite`), so a bug that breaks a
-proof still runs.
+one whose exit status does not match the failures it records. Every run
+must also test the same inputs as the unchanged copy: its record must
+give the same `- Inputs SHA-256:` line, or the bug counts as missed,
+since its failures might come from inputs the unchanged copy was not
+run on. The tests build only the executable (`lake build sqlite`), so a
+bug that breaks a proof still runs.
 
     python3 tests/plant_bugs.py [--count N]
 
@@ -61,11 +64,14 @@ BUGS = [
      "  guard (z = List.replicate 20 0)",
      "  guard (z.take 19 = List.replicate 19 0)"),
     ("schema format 5 is accepted",
-     "    schemaFormat ≤ 4 && (textEncoding == 1 || textEncoding == 2 || textEncoding == 3))",
-     "    schemaFormat ≤ 5 && (textEncoding == 1 || textEncoding == 2 || textEncoding == 3))"),
-    ("text encoding 0 is accepted",
-     "    schemaFormat ≤ 4 && (textEncoding == 1 || textEncoding == 2 || textEncoding == 3))",
-     "    schemaFormat ≤ 4 && textEncoding ≤ 3)"),
+     "    schemaFormat ≤ 4 && (textEncoding == 1 || textEncoding == 2 || textEncoding == 3 ||",
+     "    schemaFormat ≤ 5 && (textEncoding == 1 || textEncoding == 2 || textEncoding == 3 ||"),
+    ("text encoding 0 is accepted, whatever the schema format",
+     "      textEncoding == 0 && schemaFormat == 0))",
+     "      textEncoding == 0))"),
+    ("text encoding 0 is refused, even with schema format 0",
+     "      textEncoding == 0 && schemaFormat == 0))",
+     "      false))"),
     ("the index leaf page type is 11, not 10",
      "  | 10 => some .indexLeaf",
      "  | 11 => some .indexLeaf"),
@@ -187,8 +193,9 @@ BUGS = [
 def failures(copy, count):
     """The failures a run of the tests reports, or None, with the run's
     output, when it reports none: the code did not build, or the run did
-    not finish. A run that dies writes no record, so the old one is
-    removed first rather than read again."""
+    not finish; and the SHA-256 of the inputs the run made. A run that
+    dies writes no record, so the old one is removed first rather than
+    read again."""
     record = copy / "tests" / "TEST-RESULTS.md"
     record.unlink(missing_ok=True)
     run = subprocess.run([sys.executable, "tests/run_tests.py", "--count", str(count),
@@ -196,14 +203,16 @@ def failures(copy, count):
                          cwd=copy, capture_output=True, text=True)
     out = run.stdout + run.stderr
     if not record.exists():
-        return None, f"no record written, exit status {run.returncode}\n{out}"
-    m = re.search(r"^- Failures: (\d+)(.*)$", record.read_text(encoding="utf-8"), re.M)
+        return None, f"no record written, exit status {run.returncode}\n{out}", None
+    text = record.read_text(encoding="utf-8")
+    m = re.search(r"^- Failures: (\d+)(.*)$", text, re.M)
     if m is None or m.group(2).strip():
-        return None, out  # the run gave up, for example the bug did not build: not a catch
+        return None, out, None  # the run gave up, for example the bug did not build: not a catch
+    d = re.search(r"^- Inputs SHA-256: ([0-9a-f]{64})", text, re.M)
     n = int(m.group(1))
     if run.returncode != (1 if n else 0):
-        return None, f"{n} failures but exit status {run.returncode}\n{out}"
-    return n, None
+        return None, f"{n} failures but exit status {run.returncode}\n{out}", None
+    return n, None, d and d.group(1)
 
 
 def ignore(folder, names):
@@ -223,11 +232,11 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         copy = Path(tmp) / "sqlite"
         shutil.copytree(ROOT, copy, symlinks=True, ignore=ignore)
-        n, err = failures(copy, args.count)
-        rows.append(("none", n))
-        if n != 0:
+        n, err, inputs = failures(copy, args.count)
+        rows.append(("none", n, ""))
+        if n != 0 or inputs is None:
             missed += 1
-        print(f"none: {n} failures" + (" (did not build or did not finish)" if err else ""),
+        print(f"none: {n} failures, inputs {inputs}" + (" (did not build or did not finish)" if err else ""),
               flush=True)
         if err:
             print(err[-2000:], flush=True)
@@ -238,12 +247,13 @@ def main():
             if original.count(line) != 1:
                 sys.exit(f"{name} no longer holds, once, the line for {what!r}: {line}")
             code.write_text(original.replace(line, bug), encoding="utf-8")
-            n, err = failures(copy, args.count)
+            n, err, got = failures(copy, args.count)
             code.write_text(original, encoding="utf-8")
-            rows.append((what, n))
-            if not n:
+            note = "" if err or got == inputs else " (other inputs than the unchanged copy's)"
+            rows.append((what, n, note))
+            if not n or note:
                 missed += 1
-            print(f"{what}: {n} failures" + (" (did not build or did not finish)" if err else ""),
+            print(f"{what}: {n} failures{note}" + (" (did not build or did not finish)" if err else ""),
                   flush=True)
             if err:
                 print(err[-2000:], flush=True)
@@ -254,11 +264,13 @@ def main():
              f"`tests/run_tests.py --count {args.count} --no-oracles`, which builds only the "
              "executable and compares it with the model alone. Every bug must give failures, and "
              "the unchanged code none. A bug that does not build, or a run that gives up or "
-             "dies, counts as missed.", "",
+             "dies, counts as missed. So does a run on other inputs than the unchanged code's: "
+             "every run must give the same `- Inputs SHA-256:` line, which here is "
+             f"{inputs or 'missing'}.", "",
              "| Planted bug | Failures |", "|---|---|"]
-    lines += [f"| {what} | {'did not build or did not finish' if n is None else n} |"
-              for what, n in rows]
-    lines += ["", f"Bugs caught: {sum(1 for what, n in rows[1:] if n)} of {len(BUGS)}", ""]
+    lines += [f"| {what} | {'did not build or did not finish' if n is None else n}{note} |"
+              for what, n, note in rows]
+    lines += ["", f"Bugs caught: {sum(1 for what, n, note in rows[1:] if n and not note)} of {len(BUGS)}", ""]
     RECORD.write_text("\n".join(lines), encoding="utf-8")
     return 1 if missed else 0
 

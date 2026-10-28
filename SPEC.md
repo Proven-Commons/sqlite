@@ -27,7 +27,7 @@ A reviewer who did not write this specification approves it. The approval also c
 - the usable size, the page size less the reserved space, is at least 480 (1.3.4);
 - the payload fractions are 64, 32 and 32 (1.3.5);
 - the schema format is 0 to 4 (1.3.10: formats 1 to 4, and 0 for a database with no schema);
-- the text encoding is 1, 2 or 3, for UTF-8, UTF-16le and UTF-16be (1.3.13);
+- the text encoding is 1, 2 or 3, for UTF-8, UTF-16le and UTF-16be (1.3.13), or 0 when the schema format is 0: SQLite writes both as 0 while a database has no schema, so no text has been stored yet, and reads such a file;
 - the 20 bytes "reserved for expansion" are zero (1.3.17);
 - every field is small enough for its bytes.
 
@@ -89,7 +89,7 @@ Each property is a theorem in `Spec.lean`, under the name given.
 | The usable part of every page the reader gives is in the file, and every cell pointer lies after the cell pointer array and before the end of the usable size. | `Spec.readPage_inside` |
 | The record reader accepts exactly a record and gives its values. | `Spec.readRecord_iff` |
 | Examples worked by hand: varints of one, two and nine bytes; the local size of a payload of 10000 bytes on a table leaf page of usable size 4096; a record of an integer and a string; the header SQLite 3.45.1 wrote for a database, field by field; and a one-page file with one row. | `Spec.examples` |
-| Inputs that each break a rule: a varint cut short; a header without its header string, with a page size of 768, a read version of 3, a usable size of 479, a text encoding of 0, or a payload fraction of 63; page 2 of a one-page file, and page 0; serial type 10, a body longer than its columns, a header size larger than the record, and a record with no column. | `Spec.rejects` |
+| Inputs that each break a rule: a varint cut short; a header without its header string, with a page size of 768, a read version of 3, a usable size of 479, a text encoding of 0 with a schema, or a payload fraction of 63; page 2 of a one-page file, and page 0; serial type 10, a body longer than its columns, a header size larger than the record, and a record with no column. | `Spec.rejects` |
 
 ## Not in this slice
 

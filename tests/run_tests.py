@@ -31,7 +31,9 @@ header of Main.lean). Its answers are checked two ways.
      from 512 to 65536; a read version of 1 or 2 (any write version); a
      usable size of at least 480; payload fractions of exactly 64, 32
      and 32; the 20 bytes reserved for expansion all zero; a schema
-     format from 0 to 4; a text encoding of 1, 2 or 3;
+     format from 0 to 4; a text encoding of 1, 2 or 3, or of 0 when the
+     schema format is 0 (SQLite writes both as 0 while a database has
+     no schema);
    - PageEncodes: a page type of 2, 5, 10 or 13; the cell pointer array
      ending no later than the cell content area starts, and that area
      starting no later than the usable size; every cell starting no
@@ -41,13 +43,26 @@ header of Main.lean). Its answers are checked two ways.
      ending within the header.
    The `local` request is `localSize`, in natural numbers as
    Spec/Defs.lean computes it, so a difference below 0 is 0 and a
-   remainder by 0 is the number itself. `dump` is the header, then each
-   whole page, read or `FAIL`, and the record of each cell whose
-   payload is all on its page, as the header of Main.lean says. The
-   model must give the answers Spec.lean states in `examples` and
-   `rejects`. Every answer of the tool must equal the model's. The
-   record counts, for each kind of request, why the model refuses what
-   it refuses.
+   remainder by 0 is the number itself. The model prints what `sqlite
+   dump` prints by the header of Main.lean, which gives the format, and
+   the model's own answers to the requests, with no other rule:
+   - `header` and the 18 fields, as `header` gives them;
+   - for each whole page of the file in turn, N from 1 to the file's
+     length divided by the page size: `page N` and the page as `page`
+     gives it, or `page N FAIL` when it is not a b-tree page the
+     model accepts;
+   - after a page, for each cell whose payload is all on its page and
+     not empty, in the order of the cell pointers: `record N P ROWID`
+     and the values as `record` gives them, or FAIL when the payload is
+     not a record. P is the cell's pointer, ROWID its rowid (`-` on an
+     index page). An empty payload holds no record and gets no line.
+   It exits with 0. When the file does not start with a header the
+   model accepts, it prints nothing on standard output and exits with
+   1; on wrong arguments or a file it cannot read, it prints nothing on
+   standard output and exits with 2. The model must give the answers
+   Spec.lean states in `examples` and `rejects`. Every answer of the
+   tool must equal the model's. The record counts, for each kind of
+   request, why the model refuses what it refuses.
 
 2. Against SQLite: Python's sqlite3 module, linked to the SQLite library
    SQLITE_PINNED, makes databases of many kinds (see below) and then
@@ -74,10 +89,12 @@ header of Main.lean). Its answers are checked two ways.
      its right (1.6);
    - that every page is accounted for, once: a page dbstat lists, a
      freelist page reached from the first trunk page the tool reads
-     (1.5), or a pointer-map page (1.8); that the pages SQLite does not
-     read as b-tree pages are not read as b-tree pages by the tool; and
-     that each pointer-map entry gives the parent the tool's reading
-     gives;
+     (1.5), or a pointer-map page (1.8); and that each pointer-map entry
+     gives the parent the tool's reading gives. The record counts the
+     overflow, freelist and pointer-map pages whose bytes the tool reads
+     as a b-tree page. That count is not a check: SQLite gives no b-tree
+     reading of those pages to compare with, and their dump lines are
+     compared with the model's like every other;
    - every row of every rowid table, sqlite_schema among them, against
      SELECT rowid, * in rowid order: the rowids the tool reads, and the
      values of the records. A cell whose payload is all on its page is
@@ -91,26 +108,33 @@ header of Main.lean). Its answers are checked two ways.
    Text is compared as bytes in the database's encoding, a float as its
    64 bits, a blob as its bytes.
 
-   A disagreement is allowed only for a named reason that the model
-   confirms: the model's reading, with SQLite's own rule, gives SQLite's
-   answer. The rules:
+   Each of these answers of SQLite is also read by the model: the
+   model's dump of the file, walked the same way, read with SQLite's own
+   rules (below). The model, so read, must give SQLite's answer, whether
+   or not the tool agrees; any answer it does not give is a failure. A
+   disagreement between the tool and SQLite is allowed only for a named
+   reason that the model confirms: the model, with SQLite's rules, gives
+   SQLite's answer, and needs at least one of those rules to do so. The
+   disagreement is counted under the rules it needs. The rules:
    - an INTEGER PRIMARY KEY column is NULL in the record, and SQLite
      gives the rowid for it (2.3);
    - in a column of REAL affinity, a float with no fractional part is
      kept as an integer, and SQLite gives it back as a float (2.3);
    - user_version and application_id read their 4 bytes as a signed
      integer;
-   - default_cache_size gives SQLite's built-in default, -2000, for a
-     field of 0;
+   - default_cache_size reads its 4 bytes as a signed integer and gives
+     its absolute value, or SQLite's built-in default, -2000, for 0;
    - dbstat counts the unused bytes of a page from the content start as
      stored, so a 0 counts as 0 and not as 65536 (1.6);
-   - SQLite knows overflow, freelist and pointer-map pages by where they
-     are linked from, not by their bytes, and some of them hold bytes
-     that read as a b-tree page; the model reads them the same way;
-   - SQLite writes a text encoding of 0 while a database has no schema,
-     and reads it as UTF-8. The model, after Spec/Defs.lean, refuses
-     such a header; read with SQLite's rule for that one field, it gives
-     the PRAGMAs.
+   - PRAGMA encoding gives UTF-8 for a text encoding of 0. SQLite
+     writes 0 there, with a schema format of 0, while a database has no
+     schema, and the field then names no encoding; for a database not
+     yet created, PRAGMA encoding gives "the text encoding that will be
+     used to create the main database" (pragma.html), UTF-8 by default
+     for a connection opened with sqlite3_open_v2 (c3ref/open.html), as
+     the sqlite3 module opens it. The tool and the model read such a
+     header, as Spec/Defs.lean allows; this rule is about PRAGMA
+     encoding alone.
    Any other disagreement is a failure. The record gives each named
    difference with its count and the first case. If the installed
    SQLite is not SQLITE_PINNED or has no dbstat, SQLite is left out as
@@ -125,7 +149,8 @@ Inputs come from a recorded seed:
   auto_vacuum and incremental vacuum (pointer-map pages), WAL, the
   legacy file format (schema format 1, set with
   SQLITE_DBCONFIG_LEGACY_FILE_FORMAT), secure_delete off,
-  user_version, application_id and default_cache_size; tables with and
+  user_version, application_id and default_cache_size; a database with
+  no schema, whose schema format and text encoding are 0; tables with and
   without rowid, STRICT tables, INTEGER PRIMARY KEY, AUTOINCREMENT, a
   table of 70 columns, indexes (UNIQUE, DESC, COLLATE, partial);
   integers of every size and sign around each boundary, 0 and 1,
@@ -134,28 +159,44 @@ Inputs come from a recorded seed:
   part kept on the page changes; rows enough for interior pages;
   explicit negative and huge rowids; deletes and updates that leave
   freeblocks, fragments and free pages; dropped tables, VACUUM,
-  ANALYZE, views and triggers. Each is dumped, and so is a copy of some
-  of them with bytes changed;
-- pages of those databases asked with `page N`: the first pages of
-  each, with the file cut after the page, page 0, the last page and the
-  one after it; pages moved to page 2 of a two-page file, whole and one
-  byte short; and pages
-  changed in one way: a bit flipped, a page header byte, the cell count,
-  the content start, a cell pointer, a payload size, a rowid, an
-  overflow page number, the right-most pointer, the page type, a byte
-  of a cell, the freeblock and fragment fields, the reserved byte or
-  the page size field of the header, or the file cut short;
+  ANALYZE, views and triggers. SQLite is never left to choose at
+  random, so the same seed makes the same files: rows to delete from a
+  WITHOUT ROWID table are picked here, not with random(), and once a
+  table may hold the largest rowid, 2^63 - 1, every later row in it is
+  given its rowid here (without one, SQLite would pick it at random,
+  autoinc.html). Each database is made twice, and the two must be the
+  same bytes. Each is dumped, and so are copies of small ones with one
+  to three pages changed, in the ways listed below that keep the file's
+  length and its 100-byte header; each copy differs from its database;
+- pages of those databases asked with `page N`: for databases of pages
+  up to 2048 bytes, page 0 and each of the first 8 pages, with the file
+  cut after the page; for files up to 128 KB, the last page and the one
+  after it; pages moved to page 2 of a two-page file, whole and one
+  byte short; and pages changed in one way, so that the file's bytes
+  differ: a bit flipped, a page header byte, the cell count, the
+  content start, a cell pointer, a payload size, a rowid, an overflow
+  page number, the right-most pointer, the page type, a byte of a cell,
+  the freeblock and fragment fields, the reserved byte or the page size
+  field of the header, or the file cut short;
 - b-tree pages built from their parts, of every type and page size,
   with payload sizes around X, M and K, and with defects: the content
   start before the pointer array ends, past the usable size, 0, or past
   the first cell; a cell pointer before the content area; a cell running
-  past the usable size; the cell count one more or one less; and pages
-  at the edges of PageEncodes, empty or with one cell, for three page
-  sizes with and without reserved bytes, whole and one byte short;
-- every value of every byte of two real headers, every value of the
-  page size field, every value of the versions, the reserved byte and
-  the payload fractions for each page size, headers from random fields,
-  a real header cut short;
+  past the usable size; the cell count one more or one less; a payload
+  size one more; a byte changed; the page type changed. A defect that
+  cannot be made on a page (no cell to change, say) is not made, and the
+  page is counted as one with none. And pages at the edges of
+  PageEncodes, empty or with one cell, for three page sizes with and
+  without reserved bytes, whole and one byte short;
+- every value of every byte of two real headers and of the header of
+  the database with no schema (so a text encoding of 0 with each schema
+  format, and each text encoding with a schema format of 0), each
+  schema format from 0 to 5 with each text encoding from 0 to 4 in a
+  real header and in that one, every value of the page size field,
+  every value of the versions, the reserved byte and the payload
+  fractions for each page size, headers from random fields (among them
+  a text encoding of 0 with each schema format from 0 to 4), a real
+  header cut short;
 - every varint of one and two bytes, each length at its bounds, nine
   bytes with every ninth byte, and random bytes;
 - random records, with integers stored in their fewest bytes and in
@@ -177,7 +218,11 @@ Inputs come from a recorded seed:
   a folder; `sqlite serve` with nothing to read; and wrong arguments:
   what each run prints on standard output and its exit status.
 
-Every seventh request ends in CR LF.
+Every seventh request ends in CR LF. The record gives a SHA-256 of the
+files made and of the requests built from them, so that a rerun with
+the same seed and count can be checked to have the same inputs. It
+leaves out the payloads that spill, which are joined by the tool's
+reading.
 
     python3 tests/run_tests.py [--seed N] [--count N] [--no-oracles] [--no-build]
 
@@ -289,16 +334,15 @@ WHY_H_READ = "a read version other than 1 and 2 (1.3.3)"
 WHY_H_FRACTIONS = "payload fractions other than 64, 32 and 32 (1.3.5)"
 WHY_H_USABLE = "a usable size below 480 (1.3.4)"
 WHY_H_SCHEMA = "a schema format above 4 (1.3.10)"
-WHY_H_ENCODING = "a text encoding other than 1, 2 and 3 (1.3.13)"
+WHY_H_ENCODING = "a text encoding other than 0, 1, 2 and 3 (1.3.13)"
+WHY_H_ENCODING_0 = ("a text encoding of 0 with a schema format other than 0 (1.3.13; Spec/Defs.lean "
+                    "HeaderValid allows 0 only with a schema format of 0)")
 WHY_H_EXPANSION = "the 20 bytes reserved for expansion not all zero (1.3.17)"
 
 
-def read_header(f, encoding_zero=False):
+def read_header(f):
     """The 18 fields of the database header at the start of `f`, in the
-    order of the table in 1.3, and None; or None and why it is refused.
-    With `encoding_zero`, a text encoding of 0 is read too, as SQLite
-    does: it writes 0 there while a database has no schema, and reads
-    it as UTF-8."""
+    order of the table in 1.3, and None; or None and why it is refused."""
     if len(f) < 100:
         return None, WHY_H_SHORT
     if f[:16] != MAGIC:
@@ -322,10 +366,17 @@ def read_header(f, encoding_zero=False):
     if page_size - reserved < 480:
         return None, WHY_H_USABLE
     words = [be(f[i:i + 4]) for i in range(24, 72, 4)]
-    if words[H_SCHEMA - 4] > 4:
+    schema_format, encoding = words[H_SCHEMA - 4], words[H_ENCODING - 4]
+    if schema_format > 4:
         return None, WHY_H_SCHEMA
-    if words[H_ENCODING - 4] not in ((0, 1, 2, 3) if encoding_zero else (1, 2, 3)):
+    # "A value of 1 means UTF-8. A value of 2 means UTF-16le. A value of 3
+    # means UTF-16be. No other values are allowed." HeaderValid allows 0
+    # too, when the schema format is 0: SQLite writes both as 0 while a
+    # database has no schema, so no text is stored yet.
+    if encoding > 3:
         return None, WHY_H_ENCODING
+    if encoding == 0 and schema_format != 0:
+        return None, WHY_H_ENCODING_0
     # "Reserved for expansion. Must be zero."
     if any(f[72:92]):
         return None, WHY_H_EXPANSION
@@ -601,8 +652,10 @@ def request(op, args):
 
 def model_dump(f):
     """What `sqlite dump` prints for the file f, as lines, and its exit
-    status: the header, then each whole page in turn, read or FAIL, and
-    the record of each cell whose payload is all on its page."""
+    status, by the header of Main.lean: the header, then each whole page
+    in turn, read or FAIL, and after a page the record of each cell
+    whose payload is all on its page and not empty; nothing, and exit
+    status 1, when the header is refused."""
     h, _ = read_header(f)
     if h is None:
         return [], 1
@@ -615,7 +668,8 @@ def model_dump(f):
             continue
         out.append(f"page {n} {show_page(pg)}")
         for p, c in zip(pg[6], pg[7]):
-            if c[4] is None and c[3]:
+            # All on its page (no overflow page) and not empty.
+            if c[4] is None and len(c[3]) > 0:
                 vs, _ = read_record(c[3])
                 out.append(f"record {n} {p} {opt(c[2])} " + ("FAIL" if vs is None else " ".join(vs)))
     return out, 0
@@ -867,6 +921,10 @@ def make_header(rng, page_size, reserved, **fields):
         H_ENCODING: rng.randint(1, 3), H_USER: rng.getrandbits(32),
         H_INCREMENTAL: rng.getrandbits(rng.choice((0, 1, 32))), H_APPID: rng.getrandbits(32),
     }
+    # A text encoding of 0, as SQLite writes it while a database has no
+    # schema, goes only with a schema format of 0.
+    if words[H_SCHEMA] == 0 and rng.random() < 0.5:
+        words[H_ENCODING] = 0
     words.update(fields)
     b = bytearray(MAGIC)
     b += (1 if page_size == 65536 else page_size).to_bytes(2, "big")
@@ -890,7 +948,7 @@ def random_header(rng):
     ps = rng.choice(PAGE_SIZES)
     b = bytearray(make_header(rng, ps, random_reserved(rng, ps)))
     for _ in range(rng.choice((0, 1, 1, 2, 3))):
-        what = rng.randrange(9)
+        what = rng.randrange(10)
         if what == 0:
             b[rng.randrange(16)] = rng.randrange(256)
         elif what == 1:
@@ -908,6 +966,10 @@ def random_header(rng):
             b[56:60] = rng.choice((0, 1, 3, 4, 2 ** 32 - 1, rng.getrandbits(32))).to_bytes(4, "big")
         elif what == 7:
             b[72 + rng.randrange(20)] = rng.randrange(1, 256)
+        elif what == 8:
+            # A text encoding of 0, with a schema format from 0 to 4.
+            b[44:48] = rng.randint(0, 4).to_bytes(4, "big")
+            b[56:60] = bytes(4)
         else:
             b[rng.randrange(100)] = rng.randrange(256)
     return bytes(b) + rng.randbytes(rng.choice((0, 0, 1, 50)))
@@ -1099,7 +1161,8 @@ PAGE_DEFECTS = ["none"] * 6 + [
 
 def built_page(rng, ps, reserved, n):
     """A file whose page n (1 or 2) is a b-tree page built from random
-    parts, and the defect it was given."""
+    parts, and the defect it was given. A defect that cannot be made, or
+    would change nothing, is not made, and the defect is "none"."""
     U = ps - reserved
     off = 100 if n == 1 else 0
     t = rng.choice(PAGE_TYPES) if rng.random() < 0.97 else rng.randrange(256)
@@ -1121,6 +1184,17 @@ def built_page(rng, ps, reserved, n):
     if rng.random() < 0.3:
         rng.shuffle(pointers)
     count = len(pointers)
+    # The cells first, so that a defect that moves one is not written over.
+    for p, c in cells:
+        page[p:p + len(c)] = c
+    # The payload size varints that can hold one more in their bytes.
+    grow = []
+    if tt != TABLE_INTERIOR:
+        for p, _ in cells:
+            q = p + (4 if tt == INDEX_INTERIOR else 0)
+            r = read_varint(page, q)
+            if r and r[0] + 1 < 2 ** 64 and varint_len(r[0] + 1) <= r[1]:
+                grow.append((q, r))
     defect = rng.choice(PAGE_DEFECTS)
     if defect == "the content start past the first cell" and cells:
         content = min(pointers) + 1
@@ -1128,7 +1202,7 @@ def built_page(rng, ps, reserved, n):
         content = max(1, floor - 1)
     elif defect == "the content start past the usable size":
         content = U + rng.randint(1, 3)
-    elif defect == "the content start 0":
+    elif defect == "the content start 0" and content != 65536:
         content = 65536
     elif defect == "a cell pointer before the content area" and cells:
         pointers[rng.randrange(count)] = max(0, content - rng.randint(1, 4))
@@ -1136,24 +1210,17 @@ def built_page(rng, ps, reserved, n):
         i = rng.randrange(count)
         c = dict((p, c) for p, c in cells)[pointers[i]]
         p = U - len(c) + rng.randint(1, 4)
-        if p + len(c) <= ps:
-            page[p:p + len(c)] = c
+        page[p:p + len(c)] = c[:max(0, ps - p)]
         pointers[i] = p
     elif defect == "the cell count one more":
         count += 1
     elif defect == "the cell count one less" and count:
         count -= 1
-    else:
-        defect = defect if defect in ("none", "a payload size one more", "a byte changed",
-                                      "the page type changed") else "none"
-    for p, c in cells:
-        page[p:p + len(c)] = c
-    if defect == "a payload size one more" and cells and tt != TABLE_INTERIOR:
-        p, c = rng.choice(cells)
-        q = p + (4 if tt == INDEX_INTERIOR else 0)
-        r = read_varint(page, q)
-        if r and r[0] + 1 < 2 ** 64 and varint_len(r[0] + 1) <= r[1]:
-            page[q:q + r[1]] = enc_varint(r[0] + 1, r[1])
+    elif defect == "a payload size one more" and grow:
+        q, r = rng.choice(grow)
+        page[q:q + r[1]] = enc_varint(r[0] + 1, r[1])
+    elif defect not in ("a byte changed", "the page type changed"):
+        defect = "none"
     page[off] = t
     page[off + 1:off + 3] = rng.choice((0, rng.getrandbits(16))).to_bytes(2, "big")
     page[off + 3:off + 5] = min(count, 65535).to_bytes(2, "big")
@@ -1164,7 +1231,8 @@ def built_page(rng, ps, reserved, n):
     for i, p in enumerate(pointers[:count] + [rng.getrandbits(16)] * (count - len(pointers))):
         page[off + hs + 2 * i:off + hs + 2 * i + 2] = (p % 65536).to_bytes(2, "big")
     if defect == "a byte changed":
-        page[rng.randrange(off, ps)] = rng.randrange(256)
+        i = rng.randrange(off, ps)
+        page[i] = (page[i] + rng.randrange(1, 256)) % 256
     elif defect == "the page type changed":
         page[off] = {2: 10, 10: 2, 5: 13, 13: 5}.get(t, rng.choice(PAGE_TYPES))
     header = make_header(rng, ps, reserved)
@@ -1181,17 +1249,21 @@ INTERESTING_16 = (0, 1, 2, 7, 8, 12, 99, 100, 107, 108, 112, 255, 256, 479, 480,
                   1023, 1024, 4095, 4096, 32767, 32768, 65534, 65535)
 
 
-def changed_page(rng, h, f, n):
-    """f, a file with header h, with page n changed in one way; the label
-    and the bytes."""
-    ps, U = h[H_PAGE_SIZE], h[H_PAGE_SIZE] - h[H_RESERVED]
-    base = (n - 1) * ps
-    off = base + (100 if n == 1 else 0)
-    b = bytearray(f)
+# The changes of changed_page that change the file's length or its
+# 100-byte header.
+RESHAPING = ("the reserved byte of the header changed", "the page size field changed", "the file cut short")
+
+
+def changed_page(rng, h, f, n, keep_shape=False):
+    """f, a file with header h, with page n changed in one way, so that
+    the bytes differ from f; the label and the bytes. With `keep_shape`,
+    only the changes that keep the file's length and its 100-byte
+    header. A change that leaves the bytes as they were is made again,
+    from f, until they differ."""
+    off = (n - 1) * h[H_PAGE_SIZE] + (100 if n == 1 else 0)
     pg, _ = read_page(h, f, n)
-    t = b[off]
-    hs = 12 if t in INTERIOR else 8
-    count = be(b[off + 3:off + 5])
+    t = f[off]
+    count = be(f[off + 3:off + 5])
     kinds = ["a bit flipped", "a page header byte changed", "the cell count changed",
              "the content start changed", "the page type changed", "the reserved byte of the header changed",
              "the page size field changed", "the file cut short", "the freeblock and fragment fields changed"]
@@ -1207,7 +1279,27 @@ def changed_page(rng, h, f, n):
             kinds.append("an overflow page number changed")
     if pg is not None and t in INTERIOR:
         kinds.append("the right-most pointer changed")
+    if keep_shape:
+        kinds = [k for k in kinds if k not in RESHAPING]
     what = rng.choice(kinds)
+    for _ in range(1000):
+        b = bytearray(f)
+        change_page(rng, b, what, h, f, n, pg)
+        if keep_shape and n == 1 and b[:100] != f[:100]:
+            continue  # a bit flipped in the header
+        if b != f:
+            return what, bytes(b)
+    raise AssertionError(f"{what}: page {n} unchanged after 1000 tries")
+
+
+def change_page(rng, b, what, h, f, n, pg):
+    """Make the change `what` to page n of b, a copy of f."""
+    ps, U = h[H_PAGE_SIZE], h[H_PAGE_SIZE] - h[H_RESERVED]
+    base = (n - 1) * ps
+    off = base + (100 if n == 1 else 0)
+    t = f[off]
+    hs = 12 if t in INTERIOR else 8
+    count = be(f[off + 3:off + 5])
     if what == "a page header byte changed":
         b[off + rng.randrange(hs)] = rng.choice((0, 1, 2, 5, 10, 13, 255, rng.randrange(256)))
     elif what == "the cell count changed":
@@ -1239,14 +1331,13 @@ def changed_page(rng, h, f, n):
         v = rng.getrandbits(64) if r[1] == 9 else rng.getrandbits(7 * r[1])
         b[q:q + r[1]] = enc_varint(v, r[1])
     elif what == "the page type changed":
-        b[off] = rng.choice([x for x in PAGE_TYPES if x != t] + [0, 1, 255])
+        b[off] = rng.choice([x for x in PAGE_TYPES + (0, 1, 255) if x != t])
     elif what == "a byte of a cell changed":
         p = base + rng.choice(pg[6]) + rng.randrange(6)
         if p < base + ps:
             b[p] = rng.randrange(256)
     elif what == "an overflow page number changed":
         i = rng.choice([k for k, c in enumerate(pg[7]) if c[4] is not None])
-        c, _ = read_cell(t, U, f[base:base + ps], pg[6][i])
         _, size = read_cell(t, U, f[base:base + ps], pg[6][i])
         p = base + pg[6][i] + size - 4
         b[p:p + 4] = rng.getrandbits(32).to_bytes(4, "big")
@@ -1265,7 +1356,6 @@ def changed_page(rng, h, f, n):
         b[off + 7] = rng.randrange(256)
     else:
         b[base + rng.randrange(ps)] ^= 1 << rng.randrange(8)
-    return what, bytes(b)
 
 
 # ---------------------------------------------------------------------
@@ -1642,15 +1732,26 @@ def random_table(con, rng, s, ti, partial, spec):
     return dict(name=name, cols=cols, kinds=kinds, kind=kind, pk=pk, rows=spec.get("rows"))
 
 
+# The largest rowid. Once a table holds it, SQLite picks the rowid of a
+# row inserted without one at random (autoinc.html).
+TOP_ROWID = 2 ** 63 - 1
+
+
 def insert_rows(con, rng, s, t, n, limit):
     """Insert up to n rows, in batches, until the file holds `limit`
-    bytes."""
+    bytes. Once a row of the table may hold the largest rowid, every
+    later row is given its rowid here, so that SQLite does not pick one
+    at random and the same seed makes the same file."""
     name, cols, kinds, kind = t["name"], t["cols"], t["kinds"], t["kind"]
     explicit = kind != "without" and (s.rowids == "wide" or rng.random() < 0.3) and not (
         s.autoincrement and name == "t0")
     target = ["rowid"] + cols if explicit and kind != "alias" else cols
     sql = f"INSERT OR IGNORE INTO {name} (" + ", ".join(target) + ") VALUES (" + ", ".join(
         "?" * len(target)) + ")"
+    # Whether the first value of a row is its rowid (or None, for SQLite
+    # to choose); without it, SQLite chooses every rowid, from 1 up.
+    rowid_first = kind == "alias" or explicit
+    top = False
     done = 0
     while done < n:
         rows = []
@@ -1660,6 +1761,10 @@ def insert_rows(con, rng, s, t, n, limit):
                 vals[0] = random_rowid(rng, s)
             if explicit and kind != "alias":
                 vals = [random_rowid(rng, s)] + vals
+            if rowid_first:
+                if vals[0] is None and top:
+                    vals[0] = any_rowid(rng)
+                top = top or vals[0] == TOP_ROWID
             rows.append(vals)
         con.executemany(sql, rows)
         done += len(rows)
@@ -1667,20 +1772,29 @@ def insert_rows(con, rng, s, t, n, limit):
             break
 
 
+def any_rowid(rng):
+    return rng.choice((rng.randint(-2 ** 63, 2 ** 63 - 1), rng.randint(-1000, 1000), TOP_ROWID,
+                       -2 ** 63, -1, 0, rng.randint(-2 ** 31, 2 ** 31)))
+
+
 def random_rowid(rng, s):
     if s.rowids == "wide" or rng.random() < 0.3:
-        return rng.choice((rng.randint(-2 ** 63, 2 ** 63 - 1), rng.randint(-1000, 1000), 2 ** 63 - 1,
-                           -2 ** 63, -1, 0, rng.randint(-2 ** 31, 2 ** 31)))
+        return any_rowid(rng)
     return None
 
 
 def change_rows(con, rng, s, t):
+    """Delete and update rows. The rows are picked here, not by SQLite's
+    random(), so that the same seed makes the same file."""
     name, cols, kinds, kind = t["name"], t["cols"], t["kinds"], t["kind"]
     if kind == "without":
         if s.deletes:
-            con.execute(f"DELETE FROM {name} WHERE abs(random()) % 100 < {int(100 * s.deletes)}")
+            keys = con.execute(f"SELECT {', '.join(t['pk'])} FROM {name} ORDER BY "
+                               f"{', '.join(t['pk'])}").fetchall()
+            gone = [k for k in keys if rng.random() < s.deletes]
+            con.executemany(f"DELETE FROM {name} WHERE " + " AND ".join(f"{c} = ?" for c in t["pk"]), gone)
         return
-    ids = [r[0] for r in con.execute(f"SELECT rowid FROM {name}")]
+    ids = [r[0] for r in con.execute(f"SELECT rowid FROM {name} ORDER BY rowid")]
     gone = [i for i in ids if rng.random() < (s.deletes or 0)]
     con.executemany(f"DELETE FROM {name} WHERE rowid = ?", [(i,) for i in gone])
     gone = set(gone)
@@ -1835,30 +1949,45 @@ def parse_dump(lines):
 
 # ---------------------------------------------------------------------
 # The comparison with SQLite.
+#
+# Each answer SQLite gives is put beside two readings of the file: the
+# tool's dump, and the model's dump read with SQLite's own rules. The
+# model, so read, must give SQLite's answer, whether or not the tool
+# agrees. Where the tool and SQLite differ, the difference is allowed
+# only when the model with SQLite's rules gives SQLite's answer and needs
+# at least one of those rules to do so; it is counted under them.
 
 NAMED_ALIAS = "an INTEGER PRIMARY KEY column is NULL in the record; SQLite gives the rowid (2.3)"
 NAMED_REAL = ("a whole-number float in a column of REAL affinity is kept as an integer; SQLite gives it "
               "back as a float (2.3)")
 NAMED_SIGNED = "PRAGMA {} reads the 4-byte field as a signed integer"
 NAMED_CACHE = "PRAGMA default_cache_size gives SQLite's built-in default, -2000, for a field of 0"
+NAMED_CACHE_SIGNED = ("PRAGMA default_cache_size reads the 4-byte field as a signed integer and gives its "
+                      "absolute value")
 NAMED_UNUSED = ("dbstat counts unused bytes from the content start as stored, so 0 counts as 0, not "
                 "65536 (1.6)")
-NAMED_ENCODING_0 = ("SQLite writes a text encoding of 0 while a database has no schema, and reads it as "
-                    "UTF-8; Spec/Defs.lean, after 1.3.13 (\"No other values are allowed\"), refuses the "
-                    "header, so the tool reads nothing of the file")
-NAMED_ROLE = "SQLite knows {} by where it is linked from; its bytes read as a b-tree page, for the model too"
-ROLES = {"overflow": "an overflow page", "ptrmap": "a pointer-map page",
-         "trunk": "a freelist trunk page", "leaf": "a freelist leaf page"}
+NAMED_ENCODING_0 = ("PRAGMA encoding gives UTF-8, the default for a database not yet created, for a text "
+                    "encoding of 0, which names none: SQLite writes 0, with a schema format of 0, while a "
+                    "database has no schema")
+ROLES = {"overflow": "overflow pages", "trunk": "freelist trunk pages", "leaf": "freelist leaf pages",
+         "ptrmap": "pointer-map pages"}
 
 
 class Check:
-    """Counts of what was compared with SQLite, the named differences, and
-    the failures."""
+    """Counts of what was compared with SQLite: the tool's answers that
+    agree, the named differences, the model's answers (read with
+    SQLite's rules) that agree, and the failures."""
 
     def __init__(self):
         self.asked = collections.Counter()
         self.agree = collections.Counter()
         self.named = {}
+        self.model_asked = collections.Counter()
+        self.model_agree = collections.Counter()
+        # Overflow, freelist and pointer-map pages, and how many of them
+        # the tool reads as b-tree pages from their bytes: a count only.
+        self.other = collections.Counter()
+        self.other_read = collections.Counter()
         self.failures = []
 
     def ok(self, what):
@@ -1872,7 +2001,31 @@ class Check:
 
     def fail(self, what, where, want, got):
         self.asked[what] += 1
-        self.failures.append((where, want, got))
+        self.failures.append((where, short(str(want)), short(str(got))))
+
+    def model(self, what, where, theirs, mine):
+        """SQLite's answer against the model's, read with SQLite's
+        rules."""
+        self.model_asked[what] += 1
+        if mine == theirs:
+            self.model_agree[what] += 1
+        else:
+            self.failures.append((f"{where}, as the model reads it with SQLite's rules", short(str(theirs)),
+                                  short(str(mine))))
+
+    def compare(self, what, where, theirs, tool, mine, rules, example):
+        """SQLite's answer `theirs` against the model's with SQLite's
+        rules, `mine`, which needed the rules `rules`; and against the
+        tool's."""
+        self.model(what, where, theirs, mine)
+        if tool == theirs:
+            self.ok(what)
+        elif mine != theirs:
+            self.asked[what] += 1  # a failure already, the model's
+        elif rules:
+            self.name(what, "; ".join(sorted(rules)), example)
+        else:
+            self.fail(what, where, theirs, tool)
 
 
 def float_bits_of_int(z):
@@ -1891,91 +2044,189 @@ def sqlite_reads(value, col, rowid):
     return value, None
 
 
+def sqlite_reads_row(values, cols, rowid):
+    """A row or index entry, read with SQLite's rules: the values, and,
+    for each rule used, the first column it was used for."""
+    if values is None or len(values) != len(cols):
+        return values, {}
+    out, rules = [], {}
+    for k, (v, col) in enumerate(zip(values, cols)):
+        x, rule = sqlite_reads(v, col, rowid)
+        out.append(x)
+        if rule:
+            rules.setdefault(rule, k)
+    return tuple(out), rules
+
+
+def signed32(v):
+    return v - 2 ** 32 if v >= 2 ** 31 else v
+
+
+TEXT_ENCODINGS = {1: "UTF-8", 2: "UTF-16le", 3: "UTF-16be"}
+
+
+def header_says(h, sqlite_rules=False):
+    """What the header h gives for each PRAGMA the tests ask SQLite: the
+    value and the rule used, or None. Without `sqlite_rules`, each field
+    as it is read (1.3); with them, as SQLite reads it: user_version and
+    application_id as signed integers; default_cache_size as the
+    absolute value of a signed integer, or SQLite's built-in default,
+    -2000, for 0; a text encoding of 0, which names no encoding, as
+    UTF-8, the encoding of a database not yet created by default."""
+    out = {
+        "page_size": h[H_PAGE_SIZE],
+        "page_count": h[H_SIZE],
+        "freelist_count": h[H_FREE],
+        "schema_version": h[H_COOKIE],
+        "encoding": TEXT_ENCODINGS.get(h[H_ENCODING], f"none (text encoding {h[H_ENCODING]})"),
+        # 1.3.3: versions 1 for a rollback journal, 2 for WAL.
+        "journal_mode": (h[H_WRITE], h[H_READ]),
+        # 1.3.8: the largest root page in auto-vacuum mode, else 0; and
+        # whether that mode is incremental.
+        "auto_vacuum: largest root page": h[H_LARGEST],
+        "auto_vacuum: incremental vacuum": h[H_INCREMENTAL],
+        "sqlite_version()": h[H_VERSION],
+        "user_version": h[H_USER],
+        "application_id": h[H_APPID],
+        "default_cache_size": h[H_CACHE],
+    }
+    out = {k: (v, None) for k, v in out.items()}
+    if sqlite_rules:
+        for name, i in (("user_version", H_USER), ("application_id", H_APPID)):
+            if h[i] >= 2 ** 31:
+                out[name] = (signed32(h[i]), NAMED_SIGNED.format(name))
+        cache = signed32(h[H_CACHE])
+        if cache == 0:
+            out["default_cache_size"] = (-2000, NAMED_CACHE)
+        elif cache < 0:
+            out["default_cache_size"] = (-cache, NAMED_CACHE_SIGNED)
+        if h[H_ENCODING] == 0:
+            out["encoding"] = ("UTF-8", NAMED_ENCODING_0)
+    return out
+
+
+def sqlite_says(F):
+    """SQLite's answers to the same PRAGMAs, in the same terms."""
+    return {
+        "page_size": F["page_size"],
+        "page_count": F["page_count"],
+        "freelist_count": F["freelist_count"],
+        "schema_version": F["schema_version"],
+        "encoding": F["encoding"],
+        "journal_mode": (2, 2) if F["journal_mode"] == "wal" else (1, 1),
+        "auto_vacuum: largest root page": F["max_root"] if F["auto_vacuum"] else 0,
+        "auto_vacuum: incremental vacuum": 1 if F["auto_vacuum"] == 2 else 0,
+        "sqlite_version()": sum(int(x) * m for x, m in zip(F["sqlite_version"].split("."), (1000000, 1000, 1))),
+        "user_version": F["user_version"],
+        "application_id": F["application_id"],
+        "default_cache_size": F["default_cache_size"],
+    }
+
+
+class Reading:
+    """A reading of a database file, the tool's or the model's: its
+    header, its pages and the records of its cells, as a dump gives
+    them, and what the walk of its b-trees finds in them."""
+
+    def __init__(self, who, h, pages, records):
+        self.who, self.h, self.pages, self.records = who, h, pages, records
+        self.rows = {}         # page -> the dbstat row it gives, the content start as read
+        self.rows_stored = {}  # the same, the content start as stored (SQLite's rule)
+        self.parent = {}       # page -> (pointer-map type, parent page)
+        self.entries = []      # per tree: [(rowid, where its record is)]
+        self.keys = []         # per table: (tree, its interior keys, the rowids of its leaves)
+        self.spills = []       # payloads that spill, joined from their overflow pages
+        self.roles = {}        # page -> "trunk", "leaf" or "ptrmap"
+        self.roles_problem = None
+
+
 class Database:
     """One database made by SQLite: its file, what SQLite says about it,
-    and the comparison of the tool's reading with it."""
+    and the comparison of the tool's reading and the model's with it."""
 
     def __init__(self, index, label, settings, path, data, facts):
         self.index, self.label, self.settings, self.path = index, label, settings, path
         self.data, self.facts = data, facts
-        self.spills = []          # (tree, entry index, payload)
+        self.tool = self.model = None
+        self.read = False
 
     def where(self, more=""):
         return f"database {self.index} ({self.label})" + (f", {more}" if more else "")
 
-    def compare_unread(self, check):
-        """A database whose header the tool refuses: allowed only when the
-        model refuses it for its text encoding of 0, and reads it, with
-        SQLite's rule for that field, as SQLite does."""
-        F = self.facts
-        h, why = read_header(self.data)
-        lenient, _ = read_header(self.data, encoding_zero=True)
-        if (h is None and why == WHY_H_ENCODING and lenient is not None and lenient[H_ENCODING] == 0
-                and F["encoding"] == "UTF-8" and lenient[H_PAGE_SIZE] == F["page_size"]
-                and lenient[H_SIZE] == F["page_count"]):
-            check.name("header fields", NAMED_ENCODING_0,
-                       f"{self.where()}: PRAGMA encoding {F['encoding']}, the header "
-                       f"{self.data[:100].hex()}")
-        else:
-            check.fail("header fields", self.where(), "a header the tool reads", "none")
+    def read_back(self, got, model_lines, check):
+        """Read the tool's dump `got` and the model's, `model_lines`, walk
+        the b-trees of each, and compare the header and the pages with
+        SQLite. The rows wait for the payloads that spill
+        (compare_entries)."""
+        h, pages, records = parse_dump(model_lines)
+        if h is not None:
+            self.model = self.walk(Reading("the model", h, pages, records), check)
+        h, pages, records = parse_dump(got)
+        if h is not None:
+            self.tool = self.walk(Reading("the tool", h, pages, records), check)
+            self.compare_keys(self.tool, check)
+        self.compare_header(check)
+        self.compare_pages(check)
+        self.read = True
 
-    def compare_header(self, h, check):
-        F = self.facts
+    def compare_header(self, check):
+        F, tool, model = self.facts, self.tool, self.model
         what = "header fields"
-        if h is None:
-            check.fail(what, self.where(), "a header", "none")
+        theirs = sqlite_says(F)
+        mine = header_says(model.h, sqlite_rules=True) if model else {k: (None, None) for k in theirs}
+        if tool is None:
+            # The tool reads no header of a file SQLite made: a failure,
+            # and the model's reading is still checked.
+            for name, value in theirs.items():
+                check.model(what, self.where(f"PRAGMA {name}"), value, mine[name][0])
+            check.fail(what, self.where(), "a header the tool reads", "none")
             return
-        pairs = [("page_size", h[H_PAGE_SIZE], F["page_size"]),
-                 ("page_count", h[H_SIZE], F["page_count"]),
-                 ("freelist_count", h[H_FREE], F["freelist_count"]),
-                 ("schema_version", h[H_COOKIE], F["schema_version"]),
-                 ("encoding", {1: "UTF-8", 2: "UTF-16le", 3: "UTF-16be"}.get(h[H_ENCODING]), F["encoding"]),
-                 ("journal_mode", (h[H_WRITE], h[H_READ]), (2, 2) if F["journal_mode"] == "wal" else (1, 1)),
-                 ("auto_vacuum: largest root page", h[H_LARGEST],
-                  F["max_root"] if F["auto_vacuum"] else 0),
-                 ("auto_vacuum: incremental vacuum", h[H_INCREMENTAL], 1 if F["auto_vacuum"] == 2 else 0),
-                 ("sqlite_version()", h[H_VERSION],
-                  sum(int(x) * m for x, m in zip(F["sqlite_version"].split("."), (1000000, 1000, 1))))]
-        for name, mine, theirs in pairs:
-            if mine == theirs:
-                check.ok(what)
-            else:
-                check.fail(what, self.where(f"PRAGMA {name}"), repr(theirs), repr(mine))
-        for name, mine in (("user_version", h[H_USER]), ("application_id", h[H_APPID])):
-            theirs = F[name]
-            if mine == theirs:
-                check.ok(what)
-            elif theirs < 0 and mine == theirs + 2 ** 32:
-                check.name(what, NAMED_SIGNED.format(name), f"{self.where()}: SQLite {theirs}, the tool {mine}")
-            else:
-                check.fail(what, self.where(f"PRAGMA {name}"), repr(theirs), repr(mine))
-        theirs, mine = F["default_cache_size"], h[H_CACHE]
-        if mine == theirs:
-            check.ok(what)
-        elif mine == 0 and theirs == -2000:
-            check.name(what, NAMED_CACHE, f"{self.where()}: SQLite {theirs}, the tool {mine}")
-        else:
-            check.fail(what, self.where("PRAGMA default_cache_size"), repr(theirs), repr(mine))
+        got = header_says(tool.h)
+        for name, value in theirs.items():
+            m, rule = mine[name]
+            check.compare(what, self.where(f"PRAGMA {name}"), value, got[name][0], m, {rule} - {None},
+                          f"{self.where()}: SQLite {value}, the tool {got[name][0]}")
 
-    def walk(self, h, pages, records, check):
-        """Walk every b-tree from its root by the tool's reading. The rows
-        dbstat would give for each page, the role of each page, the
-        entries of each tree, and the payloads that spill."""
-        F, f = self.facts, self.data
+    def roles_of(self, h):
+        """The pointer-map pages (1.8) when h has a largest root page, and
+        the freelist pages, reached from the first trunk page h gives
+        (1.5): page -> "ptrmap", "trunk" or "leaf"; and why the freelist
+        could not be followed, or None."""
+        f, npages = self.data, self.facts["page_count"]
         ps, U = h[H_PAGE_SIZE], h[H_PAGE_SIZE] - h[H_RESERVED]
-        npages = len(f) // ps
-        self.rows = {}            # page -> the dbstat row the tool's reading gives
-        self.parent = {}          # page -> (ptrmap type, parent)
-        self.entries = []         # per tree: [(rowid, ("dump", key) or ("spill", i))]
-        self.keys = []            # per table: its interior keys, where they fall among the rowids
-        bad = check.failures
+        roles, problem = {}, None
+        if h[H_LARGEST]:
+            p = 2
+            while p <= npages:
+                roles[p] = "ptrmap"
+                p += U // 5 + 1
+        trunk, seen = h[H_TRUNK], set()
+        while trunk:
+            if trunk in seen or not 1 <= trunk <= npages:
+                problem = f"freelist trunk page {trunk} past the end or reached again"
+                break
+            seen.add(trunk)
+            roles[trunk] = "trunk"
+            page = f[(trunk - 1) * ps:trunk * ps]
+            for k in range(min(be(page[4:8]), (U - 8) // 4)):
+                roles[be(page[8 + 4 * k:12 + 4 * k])] = "leaf"
+            trunk = be(page[:4])
+        return roles, problem
 
-        def page_bytes(n):
-            return f[(n - 1) * ps:n * ps]
+    def walk(self, r, check):
+        """Walk every b-tree from the root sqlite_schema gives, by the
+        reading r: its child pointers, and each overflow chain from the
+        first overflow page it reads. Fills in r (see Reading)."""
+        F, f, h, pages = self.facts, self.data, r.h, r.pages
+        ps = h[H_PAGE_SIZE]
+        npages = len(f) // ps
+
+        def bad(where, want, got):
+            check.failures.append((self.where(f"{r.who}'s reading, {where}"), want, got))
 
         for tree in F["trees"]:
             entries = []
-            self.entries.append(entries)
+            r.entries.append(entries)
             table = tree["kind"] == "table"
             types = (TABLE_INTERIOR, TABLE_LEAF) if table else (INDEX_INTERIOR, INDEX_LEAF)
             stack = [("page", tree["root"], "/", None)]
@@ -1986,39 +2237,39 @@ class Database:
                     keys.append((len(order), item[1], item[2]))
                     continue
                 _, n, path, parent = item
-                if n in self.rows or not 1 <= n <= npages:
-                    bad.append((self.where(f"{tree['name']} page {n}, path {path}"),
-                                "a page of the file reached once", "a page reached again or past the end"))
+                if n in r.rows or not 1 <= n <= npages:
+                    bad(f"{tree['name']} page {n}, path {path}", "a page of the file reached once",
+                        "a page reached again or past the end")
                     continue
                 pg = pages.get(n)
                 if pg is None:
-                    self.rows[n] = (tree["name"], path, "FAIL")
+                    r.rows[n] = r.rows_stored[n] = (tree["name"], path, "FAIL")
                     continue
                 t, ffb, count, content, frag, right, pointers, cells = pg
                 if t not in types:
-                    bad.append((self.where(f"page {n} of {tree['name']}"),
-                                f"page type {' or '.join(map(str, types))}", f"page type {t}"))
-                self.parent[n] = (1, 0) if parent is None else (5, parent)
+                    bad(f"page {n} of {tree['name']}", f"page type {' or '.join(map(str, types))}",
+                        f"page type {t}")
+                r.parent[n] = (1, 0) if parent is None else (5, parent)
                 kept = sum(len(c[3]) for c in cells)
                 biggest = max([c[1] or 0 for c in cells] + [0])
                 hdr = (100 if n == 1 else 0) + (12 if t in INTERIOR else 8)
                 free, at, seen = 0, ffb, set()
-                pb = page_bytes(n)
+                pb = f[(n - 1) * ps:n * ps]
                 while at and at not in seen and at + 4 <= ps:
                     seen.add(at)
                     free += be(pb[at + 2:at + 4])
                     at = be(pb[at:at + 2])
-                unused = content - hdr - 2 * count + frag + free
-                self.rows[n] = (tree["name"], path, "internal" if t in INTERIOR else "leaf", count, kept,
-                                unused, biggest)
+                row = (tree["name"], path, "internal" if t in INTERIOR else "leaf", count, kept)
+                r.rows[n] = row + (content - hdr - 2 * count + frag + free, biggest)
+                r.rows_stored[n] = row + (content % 65536 - hdr - 2 * count + frag + free, biggest)
                 children = []
                 for i, (p, c) in enumerate(zip(pointers, cells)):
                     left, size, rowid, local, overflow = c
                     if overflow is not None:
-                        payload = self.follow(tree, n, path, i, c, U, ps, npages, check)
+                        payload = self.follow(r, tree, n, path, i, c, npages, bad)
                         if payload is not None:
-                            self.spills.append(payload)
-                            ref = ("spill", len(self.spills) - 1)
+                            r.spills.append(payload)
+                            ref = ("spill", len(r.spills) - 1)
                         else:
                             ref = ("broken", None)
                     else:
@@ -2036,16 +2287,48 @@ class Database:
                 stack.extend(reversed(children))
             entries.extend(order)
             if table:
-                self.keys.append((tree, keys, [r for r, _ in order]))
+                r.keys.append((tree, keys, [rowid for rowid, _ in order]))
+        r.roles, r.roles_problem = self.roles_of(h)
+        for p, role in r.roles.items():
+            if role in ("trunk", "leaf"):
+                r.parent.setdefault(p, (2, 0))
+        return r
 
-    def compare_keys(self, check):
-        """The keys of table interior cells, as the tool reads them, among
-        the rowids of the leaves: "pointers to the left of a X refer to
-        b-tree pages on which all keys are less than or equal to X.
+    def follow(self, r, tree, n, path, i, cell, npages, bad):
+        """The whole payload of a cell that spills: the part the reading r
+        keeps on the page and the overflow pages, from the first one it
+        reads (1.7). Adds the overflow pages' dbstat rows."""
+        ps, U = r.h[H_PAGE_SIZE], r.h[H_PAGE_SIZE] - r.h[H_RESERVED]
+        left, size, rowid, local, first = cell
+        rest = size - len(local)
+        count = -(-rest // (U - 4))
+        out, at, prev = bytearray(local), first, n
+        for j in range(count):
+            if not 1 <= at <= npages or at in r.rows:
+                bad(f"{tree['name']} page {n} cell {i}, overflow page {j}", "a page of the file not used before",
+                    f"page {at}")
+                return None
+            page = self.data[(at - 1) * ps:at * ps]
+            part = min(U - 4, rest - len(out) + len(local))
+            out += page[4:4 + part]
+            last = j == count - 1
+            r.rows[at] = r.rows_stored[at] = (tree["name"], f"{path}{i:03x}+{j:06x}", "overflow", 0, part,
+                                              (U - 4 - part) if last else 0, 0)
+            r.parent[at] = (3, n) if j == 0 else (4, prev)
+            prev, at = at, be(page[:4])
+        if at != 0:
+            bad(f"{tree['name']} page {n} cell {i}", "the overflow chain ends where the payload size says",
+                f"page {prev} links on to page {at}")
+        return bytes(out)
+
+    def compare_keys(self, r, check):
+        """The keys of table interior cells, as the reading r gives them,
+        among the rowids of the leaves: "pointers to the left of a X refer
+        to b-tree pages on which all keys are less than or equal to X.
         Pointers to the right of X refer to pages where all keys are
         greater than X" (1.6)."""
         what = "table interior keys"
-        for tree, keys, rowids in self.keys:
+        for tree, keys, rowids in r.keys:
             last = None
             for pos, key, where in keys:
                 before = rowids[pos - 1] if pos > 0 else None
@@ -2058,200 +2341,161 @@ class Database:
                                f"a key from {before} to below {after}, above {last}", f"key {key}")
                 last = key
 
-    def follow(self, tree, n, path, i, cell, U, ps, npages, check):
-        """The whole payload of a cell that spills: the part the tool keeps
-        on the page and the overflow pages, from the first one the tool
-        reads (1.7). Adds the overflow pages' dbstat rows."""
-        left, size, rowid, local, first = cell
-        rest = size - len(local)
-        count = -(-rest // (U - 4))
-        out, at, prev = bytearray(local), first, n
-        for j in range(count):
-            if not 1 <= at <= npages or at in self.rows:
-                check.failures.append((self.where(f"{tree['name']} page {n} cell {i}, overflow page {j}"),
-                                       "a page of the file not used before", f"page {at}"))
-                return None
-            page = self.data[(at - 1) * ps:at * ps]
-            part = min(U - 4, rest - len(out) + len(local))
-            out += page[4:4 + part]
-            last = j == count - 1
-            self.rows[at] = (tree["name"], f"{path}{i:03x}+{j:06x}", "overflow", 0, part,
-                             (U - 4 - part) if last else 0, 0)
-            self.parent[at] = (3, n) if j == 0 else (4, prev)
-            prev, at = at, be(page[:4])
-        if at != 0:
-            check.failures.append((self.where(f"{tree['name']} page {n} cell {i}"),
-                                   "the overflow chain ends where the payload size says",
-                                   f"page {prev} links on to page {at}"))
-        return bytes(out)
-
-    def compare_pages(self, h, pages, check):
-        """dbstat, page by page; the pages SQLite does not read as b-tree
-        pages; the freelist and pointer-map pages."""
-        F, f = self.facts, self.data
-        ps, U = h[H_PAGE_SIZE], h[H_PAGE_SIZE] - h[H_RESERVED]
+    def compare_pages(self, check):
+        """dbstat, page by page; every page accounted for; the pointer-map
+        entries; and the count of overflow, freelist and pointer-map pages
+        the tool reads as b-tree pages."""
+        F, f, tool, model = self.facts, self.data, self.tool, self.model
         stat = F["dbstat"]
         npages = F["page_count"]
         what = "dbstat rows"
-        for n in sorted(set(stat) | set(self.rows)):
-            theirs, mine = stat.get(n), self.rows.get(n)
-            if theirs == mine:
-                check.ok(what)
-            elif (theirs and mine and theirs[:5] == mine[:5] and theirs[6] == mine[6] and mine[2] != "overflow"
-                  and pages.get(n) and pages[n][3] == 65536 and theirs[5] == mine[5] - 65536):
-                check.name(what, NAMED_UNUSED, f"{self.where(f'page {n}')}: dbstat {theirs}, the tool's "
-                                               f"reading {mine}")
-            else:
-                check.fail(what, self.where(f"page {n}"), f"dbstat {theirs}", f"from the tool {mine}")
-        # The pages dbstat does not list.
-        roles = {}
-        if h[H_LARGEST]:
-            J = U // 5
-            p = 2
-            while p <= npages:
-                roles[p] = "ptrmap"
-                p += J + 1
-        trunk, seen = h[H_TRUNK], set()
-        while trunk:
-            if trunk in seen or not 1 <= trunk <= npages:
-                check.fail("pages accounted for", self.where(f"freelist trunk page {trunk}"),
-                           "a page of the file", "a page past the end or reached again")
-                break
-            seen.add(trunk)
-            roles[trunk] = "trunk"
-            page = f[(trunk - 1) * ps:trunk * ps]
-            for k in range(min(be(page[4:8]), (U - 8) // 4)):
-                roles[be(page[8 + 4 * k:12 + 4 * k])] = "leaf"
-            trunk = be(page[:4])
-        free = [p for p, r in roles.items() if r in ("trunk", "leaf")]
-        for p in free:
-            self.parent.setdefault(p, (2, 0))
-        listed = set(stat)
-        overlap = sorted(set(roles) & listed)
-        missing = sorted(set(range(1, npages + 1)) - listed - set(roles))
-        if overlap or missing or len(free) != h[H_FREE] or max(list(roles) + [0]) > npages:
-            check.fail("pages accounted for", self.where(), "every page once: in dbstat, on the freelist "
-                       "or a pointer-map page", f"in two of them {overlap[:5]}, in none {missing[:5]}, "
-                       f"{len(free)} freelist pages for {h[H_FREE]}")
-        else:
-            check.ok("pages accounted for")
-        what = "pages SQLite does not read as b-tree pages"
-        for n in range(1, npages + 1):
-            role = "overflow" if stat.get(n, ("", "", ""))[2] == "overflow" else roles.get(n)
-            if role is None:
+        listed = set(stat).union(*(set(r.rows) for r in (tool, model) if r is not None))
+        for n in sorted(listed):
+            where = self.where(f"page {n}")
+            theirs = stat.get(n)
+            mine = model.rows_stored.get(n) if model else None
+            if tool is None:
+                check.model(what, where, theirs, mine)
                 continue
-            got = pages.get(n)
-            if got is None:
-                check.ok(what)
+            rules = {NAMED_UNUSED} if mine != model.rows.get(n) else set()
+            check.compare(what, where, theirs, tool.rows.get(n), mine, rules,
+                          f"{where}: dbstat {theirs}, the tool's reading {tool.rows.get(n)}")
+        if tool is not None:
+            roles = tool.roles
+            free = [p for p, role in roles.items() if role in ("trunk", "leaf")]
+            overlap = sorted(set(roles) & set(stat))
+            missing = sorted(set(range(1, npages + 1)) - set(stat) - set(roles))
+            if (tool.roles_problem or overlap or missing or len(free) != tool.h[H_FREE]
+                    or max(list(roles) + [0]) > npages):
+                check.fail("pages accounted for", self.where(), "every page once: in dbstat, on the freelist "
+                           "or a pointer-map page", f"in two of them {overlap[:5]}, in none {missing[:5]}, "
+                           f"{len(free)} freelist pages for {tool.h[H_FREE]}; {tool.roles_problem or ''}")
             else:
-                pg, _ = read_page(h, f, n)
-                if pg is not None:
-                    check.name(what, NAMED_ROLE.format(ROLES[role]), f"{self.where(f'page {n}')}: page {n} "
-                               f"{show_page(got)[:120]}")
-                else:
-                    check.fail(what, self.where(f"page {n}"), "FAIL, as the model reads it",
-                               show_page(got)[:120])
-        # Pointer-map entries against the tree the tool reads.
+                check.ok("pages accounted for")
+            # Not a check: SQLite gives no b-tree reading of these pages.
+            for n in range(1, npages + 1):
+                role = "overflow" if stat.get(n, ("", "", ""))[2] == "overflow" else roles.get(n)
+                if role is not None:
+                    check.other[role] += 1
+                    check.other_read[role] += tool.pages.get(n) is not None
+        # The pointer-map entries SQLite wrote (1.8), against the parent
+        # each page has in the walk.
         what = "pointer-map entries"
-        if h[H_LARGEST]:
+        ref = model or tool
+        if F["auto_vacuum"] and ref is not None:
+            ps, U = ref.h[H_PAGE_SIZE], ref.h[H_PAGE_SIZE] - ref.h[H_RESERVED]
             J = U // 5
             for n in range(3, npages + 1):
-                if roles.get(n) == "ptrmap":
-                    continue
+                if (n - 2) % (J + 1) == 0:
+                    continue  # a pointer-map page
                 base = 2 + ((n - 3) // (J + 1)) * (J + 1)
                 at = (base - 1) * ps + 5 * (n - base - 1)
                 theirs = (f[at], be(f[at + 1:at + 5]))
-                mine = self.parent.get(n)
-                if theirs == mine:
-                    check.ok(what)
+                mine = model.parent.get(n) if model else None
+                where = self.where(f"page {n}")
+                if tool is None:
+                    check.model(what, where, theirs, mine)
                 else:
-                    check.fail(what, self.where(f"page {n}"), f"pointer-map entry {theirs}",
-                               f"from the tool {mine}")
+                    check.compare(what, where, theirs, tool.parent.get(n), mine, set(), None)
 
-    def compare_entries(self, records, spilled, check):
-        """The rows and index entries the tool reads against SQLite's."""
-        for tree, entries in zip(self.facts["trees"], self.entries):
-            values = []
+    def values(self, r, spilled):
+        """For each tree, the entries the reading r gives: (rowid, the
+        values of the record, or None when it is not read). `spilled(k)`
+        gives the values of the kth payload that spills."""
+        out = []
+        for entries in r.entries:
+            vs = []
             for rowid, (src, key) in entries:
-                if src == "dump":
-                    values.append(records.get(key, "missing"))
-                elif src == "spill":
-                    a = spilled[key]
-                    values.append(a[3:].split(" ") if a.startswith("OK ") else None)
-                else:
-                    values.append(None)
+                v = r.records.get(key) if src == "dump" else spilled(key) if src == "spill" else None
+                vs.append((rowid, None if v is None else tuple(v)))
+            out.append(vs)
+        return out
+
+    def compare_entries(self, answers, check):
+        """The rows of each table and the entries of each index against
+        SQLite's. `answers` are the tool's answers to `record` for the
+        payloads that spill in its reading; the model reads its own with
+        read_record."""
+        tool = model = None
+        if self.tool is not None:
+            def from_tool(k):
+                a = answers.get(k, "")
+                return a[3:].split(" ") if a.startswith("OK ") else None
+            tool = self.values(self.tool, from_tool)
+        if self.model is not None:
+            model = self.values(self.model, lambda k: read_record(self.model.spills[k])[0])
+        for k, tree in enumerate(self.facts["trees"]):
+            t = tool[k] if tool is not None else None
+            m = model[k] if model is not None else []
             if tree["kind"] == "table":
-                self.compare_table(tree, entries, values, check)
+                self.compare_table(tree, t, m, check)
             else:
-                self.compare_index(tree, values, check)
+                self.compare_index(tree, t, m, check)
 
-    def compare_table(self, tree, entries, values, check):
+    def compare_table(self, tree, tool, model, check):
+        """Row by row, in rowid order: SQLite's rowid and values, the
+        model's read with SQLite's rules, and the tool's."""
         what = "table rows"
-        rows = tree["rows"]
-        if len(rows) != len(entries):
-            check.fail(what, self.where(f"table {tree['name']}"), f"{len(rows)} rows",
-                       f"{len(entries)} cells")
-        for (rowid, _), vs, (srowid, svals) in zip(entries, values, rows):
-            where = self.where(f"table {tree['name']}, rowid {srowid}")
-            if rowid != srowid:
-                check.fail(what, where, f"rowid {srowid}", f"rowid {rowid}")
+        rows, cols = tree["rows"], tree["cols"]
+        for k in range(max(len(rows), len(tool or []), len(model))):
+            theirs = (rows[k][0], rows[k][1]) if k < len(rows) else None
+            got = tool[k] if tool is not None and k < len(tool) else None
+            mine, rules = None, {}
+            if k < len(model):
+                values, rules = sqlite_reads_row(model[k][1], cols, model[k][0])
+                mine = (model[k][0], values)
+            rowid = (theirs or got or mine or (None,))[0]
+            where = self.where(f"table {tree['name']}, rowid {rowid}")
+            if tool is None:
+                check.model(what, where, theirs, mine)
                 continue
-            if vs is None or vs == "missing" or len(vs) != len(svals):
-                check.fail(what, where, " ".join(svals)[:160], repr(vs)[:160])
-                continue
-            reasons, ok = [], True
-            for v, sv, col in zip(vs, svals, tree["cols"]):
-                if v == sv:
-                    continue
-                read, rule = sqlite_reads(v, col, rowid)
-                if rule and read == sv:
-                    reasons.append((rule, f"{where}, column {col[0]}: SQLite {sv}, the tool {v}"))
-                else:
-                    ok = False
-            if not ok:
-                check.fail(what, where, " ".join(svals)[:160], " ".join(vs)[:160])
-            elif reasons:
-                first = {}
-                for r, ex in reasons:
-                    first.setdefault(r, ex)
-                check.name(what, "; ".join(sorted(first)), "; ".join(first[r] for r in sorted(first)))
-            else:
-                check.ok(what)
+            example = "; ".join(
+                f"{where}, column {cols[j][0]}: SQLite {theirs[1][j] if theirs else None}, the tool "
+                f"{got[1][j] if got and got[1] and j < len(got[1]) else None}"
+                for _, j in sorted(rules.items()))
+            check.compare(what, where, theirs, got, mine, set(rules), example)
 
-    def compare_index(self, tree, values, check):
+    def compare_index(self, tree, tool, model, check):
+        """The entries as multisets: SQLite's, the model's read with
+        SQLite's rules, and the tool's. An entry of the tool's that is not
+        SQLite's is a named difference when the model's entry in its place,
+        read with SQLite's rules, is one of SQLite's and needed them."""
         what = "index entries"
-        theirs = collections.Counter(tree["rows"])
-        mine = collections.Counter()
-        why = {}
-        for vs in values:
-            if vs is None or vs == "missing" or len(vs) != len(tree["cols"]):
-                check.fail(what, self.where(f"index {tree['name']}"), "an entry", repr(vs)[:160])
-                continue
-            read, rules = [], set()
-            for v, col in zip(vs, tree["cols"]):
-                r, rule = sqlite_reads(v, (col[0], col[1], False), None)
-                read.append(r)
-                if rule:
-                    rules.add(rule)
-            read = tuple(read)
-            mine[read] += 1
-            if rules:
-                where = self.where(f"index {tree['name']}")
-                why[read] = (rules, f"{where}: SQLite {' '.join(read)[:100]}, the tool {' '.join(vs)[:100]}")
-        for entry, k in mine.items():
-            matched = min(k, theirs.get(entry, 0))
-            for _ in range(matched):
-                if entry in why:
-                    check.name(what, "; ".join(sorted(why[entry][0])), why[entry][1])
-                else:
-                    check.ok(what)
-            for _ in range(k - matched):
-                check.fail(what, self.where(f"index {tree['name']}"), "no such entry in SQLite",
-                           " ".join(entry)[:160])
-        for entry, k in theirs.items():
-            for _ in range(k - min(k, mine.get(entry, 0))):
-                check.fail(what, self.where(f"index {tree['name']}"), " ".join(entry)[:160],
-                           "no such entry read by the tool")
+        where = self.where(f"index {tree['name']}")
+        cols = [(name, aff, False) for name, aff, _ in tree["cols"]]
+        mine = [sqlite_reads_row(values, cols, None) for _, values in model]
+        left = collections.Counter(tree["rows"])
+        for values, _ in mine:
+            if values is not None and left[values] > 0:
+                left[values] -= 1
+                check.model(what, where, values, values)
+            else:
+                check.model(what, where, "no such entry in SQLite", values)
+        for entry, n in left.items():
+            for _ in range(n):
+                check.model(what, where, entry, "no such entry read by the model")
+        if tool is None:
+            return
+        left = collections.Counter(tree["rows"])
+        later = []
+        for k, (_, values) in enumerate(tool):
+            if values is not None and left[values] > 0:
+                left[values] -= 1
+                check.ok(what)
+            else:
+                later.append(k)
+        for k in later:
+            values = tool[k][1]
+            read, rules = mine[k] if k < len(mine) else (None, {})
+            if values is not None and read is not None and rules and left[read] > 0:
+                left[read] -= 1
+                check.name(what, "; ".join(sorted(rules)),
+                           f"{where}: SQLite {' '.join(read)[:100]}, the tool {' '.join(values)[:100]}")
+            else:
+                check.fail(what, where, "no such entry in SQLite", " ".join(values or ["(not read)"])[:160])
+        for entry, n in left.items():
+            for _ in range(n):
+                check.fail(what, where, " ".join(entry)[:160], "no such entry read by the tool")
 
 
 # ---------------------------------------------------------------------
@@ -2488,6 +2732,19 @@ def inputs(seed, count, dbs):
                [db.data[:100 + rng.choice((0, 0, 1, 28))]])
     for db in dbs[:2]:
         yield from every_byte_value("every value of every byte of a real header", db.data[:100])
+    # The header of a database with no schema: its schema format and text
+    # encoding are 0, so this gives a text encoding of 0 with every schema
+    # format, and every text encoding with a schema format of 0.
+    no_schema = [db for db in dbs if be(db.data[44:48]) == 0 and be(db.data[56:60]) == 0][:1]
+    for db in no_schema:
+        yield from every_byte_value("every value of every byte of the header of a database with no schema",
+                                    db.data[:100])
+    for base in [dbs[0].data[:100]] + [db.data[:100] for db in no_schema]:
+        for sf in range(6):
+            for enc in range(5):
+                yield ("each schema format from 0 to 5 with each text encoding from 0 to 4, in a real header",
+                       "header", [base[:44] + sf.to_bytes(4, "big") + base[48:56] + enc.to_bytes(4, "big")
+                                  + base[60:]])
     for v in range(65536):
         yield ("every value of the page size field", "header",
                [SPEC_HEADER[:16] + v.to_bytes(2, "big") + SPEC_HEADER[18:]])
@@ -2520,13 +2777,13 @@ def inputs(seed, count, dbs):
         npages = len(db.data) // ps
         if ps <= 2048:
             for n in range(0, min(npages, 8) + 1):
-                yield ("each of the first pages of a database made by SQLite, the file cut after it",
-                       "page", [n, db.data[:max(1, n) * ps]])
+                yield ("page 0 and each of the first 8 pages of a database made by SQLite with pages "
+                       "up to 2048 bytes, the file cut after it", "page", [n, db.data[:max(1, n) * ps]])
         if len(db.data) <= 131072:
-            yield ("the last page of a database made by SQLite, and the page after it", "page",
-                   [npages, db.data])
-            yield ("the last page of a database made by SQLite, and the page after it", "page",
-                   [npages + 1, db.data])
+            yield ("the last page of a database made by SQLite of up to 128 KB, and the page after it",
+                   "page", [npages, db.data])
+            yield ("the last page of a database made by SQLite of up to 128 KB, and the page after it",
+                   "page", [npages + 1, db.data])
     for db in dbs:
         ps = db.settings.page_size
         npages = len(db.data) // ps
@@ -2569,8 +2826,10 @@ def inputs(seed, count, dbs):
 
 
 def changed_databases(rng, dbs, folder, k):
-    """k copies of small databases with bytes changed in a few pages, to
-    dump."""
+    """k copies of small databases, to dump, each with one to three of
+    its pages changed in one way each, in the ways of changed_page that
+    keep the file's length and its 100-byte header. Each copy differs
+    from its database."""
     readable = [db for db in dbs if read_header(db.data)[0] is not None]
     small = [db for db in readable if len(db.data) <= 262144] or readable
     out = []
@@ -2579,11 +2838,12 @@ def changed_databases(rng, dbs, folder, k):
         h, _ = read_header(db.data)
         f = db.data
         ps = h[H_PAGE_SIZE]
-        for _ in range(rng.randint(1, 3)):
+        changes = rng.randint(1, 3)
+        while changes or f == db.data:
             n = rng.randint(1, len(f) // ps)
-            label, g = changed_page(rng, h, f, n)
-            if len(g) == len(f) and g[:100] == f[:100]:
-                f = g
+            _, f = changed_page(rng, h, f, n, keep_shape=True)
+            changes = max(0, changes - 1)
+        assert len(f) == len(db.data) and f[:100] == db.data[:100]
         path = Path(folder) / f"changed{i}.db"
         path.write_bytes(f)
         out.append((path, f))
@@ -2591,6 +2851,9 @@ def changed_databases(rng, dbs, folder, k):
 
 
 # ---------------------------------------------------------------------
+
+# How the model answers a `header` request with a text encoding of 0.
+ENC0_ANSWERS = ("read", "refused for the text encoding", "refused for another rule")
 
 
 def main():
@@ -2657,12 +2920,22 @@ def main():
         for name, why in left_out:
             print(f"oracle left out: {name}: {why}")
 
-        # The databases.
+        # The databases, each made twice: the same seed must make the
+        # same file, or the record cannot be checked by a rerun.
         dbs = []
+        made_twice = 0
         for i, (label, s, sd) in enumerate(all_databases(args.seed, args.count, lib)):
             path = tmp / f"db{i}.db"
             meta = make_database(path, s, random.Random(sd), lib)
             data = path.read_bytes()
+            again = tmp / f"db{i}-again.db"
+            make_database(again, s, random.Random(sd), lib)
+            if again.read_bytes() == data:
+                made_twice += 1
+            else:
+                failures.append((f"database {i} ({label})", "the same bytes when made again from the same seed",
+                                 "other bytes"))
+            again.unlink()
             facts = None
             if oracle:
                 facts = ask_sqlite(path, meta)
@@ -2677,6 +2950,12 @@ def main():
         # The requests.
         items = list(inputs(args.seed, args.count, dbs))
         lines = [request(op, a) + ("\r\n" if i % 7 == 6 else "\n") for i, (_, op, a) in enumerate(items)]
+        digest = hashlib.sha256()
+        for data in [db.data for db in dbs] + [f for _, f in changed]:
+            digest.update(hashlib.sha256(data).digest())
+        for line in lines:
+            digest.update(line.encode("utf-8"))
+        inputs_digest = digest.hexdigest()
         odd = MALFORMED + ODD
         served = {}
 
@@ -2695,11 +2974,15 @@ def main():
         by_label = collections.Counter(f"{label} ({op})" for label, op, _ in items)
         by_op = collections.Counter(op for _, op, _ in items)
         refused = collections.Counter()
+        enc0 = collections.Counter()
         differ_model = 0
         spec_right = 0
         for i, ((label, op, a), (want, why), got) in enumerate(zip(items, wants, tool)):
             if why is not None:
                 refused[(op, why)] += 1
+            if op == "header" and len(a[0]) >= 100 and be(a[0][56:60]) == 0:
+                enc0[(min(5, be(a[0][44:48])), ENC0_ANSWERS[0] if why is None else ENC0_ANSWERS[1]
+                      if why == WHY_H_ENCODING_0 else ENC0_ANSWERS[2])] += 1
             if label == "Spec.lean's examples and rejects":
                 spec_right += want == SPEC_CASES[i][2]
                 if want != SPEC_CASES[i][2]:
@@ -2735,6 +3018,9 @@ def main():
         page_kinds = collections.Counter()
         dumps_right = 0
         dump_lines = 0
+        # Databases SQLite made with no schema, so a schema format and a
+        # text encoding of 0, and how many of them the tool's dump reads.
+        no_schema = no_schema_read = 0
         jobs = [(db.path, db.data, db) for db in dbs] + [(p, f, None) for p, f in changed]
         with concurrent.futures.ThreadPoolExecutor(JOBS) as pool:
             results = pool.map(lambda job: run_dump(job[0]), jobs)
@@ -2761,24 +3047,22 @@ def main():
                                      f"{len(got)} lines, exit {status}{', ' + problem if problem else ''}; "
                                      f"line {first + 1}: " + short(got[first] if first < len(got) else "(none)",
                                                                    160)))
+                if db is not None and be(data[44:48]) == 0 and be(data[56:60]) == 0:
+                    no_schema += 1
+                    no_schema_read += status == 0 and got[:1] == want[:1] and bool(want)
                 if db is not None and oracle:
-                    h, pages, records = parse_dump(got)
                     try:
-                        if h is None:
-                            db.compare_unread(check)
-                        else:
-                            db.compare_header(h, check)
-                            db.walk(h, pages, records, check)
-                            db.compare_keys(check)
-                            db.compare_pages(h, pages, check)
-                            db.parsed = (h, pages, records)
-                    except Exception as e:  # the tool's dump did not read back
+                        db.read_back(got, want, check)
+                    except Exception as e:  # a dump that does not read back
                         check.fail("databases read back", db.where(), "a dump that reads back",
                                    f"{type(e).__name__}: {e}")
         print(f"{len(jobs)} dumps, {time.monotonic() - made:.0f} s", flush=True)
+        if not no_schema:
+            failures.append(("(inputs)", "a database made by SQLite with no schema, so a schema format and "
+                             "a text encoding of 0", "none"))
 
         # Payloads that spill, joined from their overflow pages.
-        spill_items = [(db, k, p) for db in dbs for k, p in enumerate(db.spills)]
+        spill_items = [(db, k, p) for db in dbs if db.tool is not None for k, p in enumerate(db.tool.spills)]
         spill_lines = [request("record", [p]) + "\n" for _, _, p in spill_items]
         spill_out, problems = run_parallel([str(EXE), "serve"], spill_lines, JOBS)
         for problem in problems:
@@ -2796,9 +3080,9 @@ def main():
             spilled.setdefault(db.index, {})[k] = got
         if oracle:
             for db in dbs:
-                if hasattr(db, "parsed"):
+                if db.read:
                     try:
-                        db.compare_entries(db.parsed[2], spilled.get(db.index, {}), check)
+                        db.compare_entries(spilled.get(db.index, {}), check)
                     except Exception as e:
                         check.fail("databases read back", db.where(), "rows that read back",
                                    f"{type(e).__name__}: {e}")
@@ -2837,6 +3121,8 @@ def main():
         "- Oracles left out: " + ("; ".join(f"{n} ({why})" for n, why in left_out) or "none"),
         f"- Seed: {args.seed}",
         f"- Inputs: {n_inputs}",
+        f"- Inputs SHA-256: {inputs_digest}, of the files made and the requests built from them, in order; "
+        "a rerun with the same seed and count must give the same",
         "- By kind: " + ", ".join(f"{k} {v}" for k, v in sorted(by_label.items())),
         "- Requests: " + ", ".join(f"`{op}` {n}" for op, n in sorted(by_op.items())),
         f"- Answers that differ from the model: {differ_model}",
@@ -2861,19 +3147,40 @@ def main():
         + f"; WAL: {sum(1 for s in settings if s.wal)}; legacy file format: "
         f"{sum(1 for s in settings if s.legacy)}; secure_delete off: "
         f"{sum(1 for s in settings if s.secure_delete == 'OFF')}"
-        + ("" if lib else f"; reserved bytes and the legacy format not set ({lib_why})"),
-        f"- Dumps: {len(jobs)} ({len(changed)} with bytes changed), {dump_lines} lines, as the model "
-        f"prints them: {dumps_right} of {len(jobs)}. Pages in them, by type: "
+        + ("" if lib else f"; reserved bytes and the legacy format not set ({lib_why})")
+        + f". Each made twice from the same seed, the same bytes both times: {made_twice} of {len(dbs)}",
+        f"- Dumps: {len(jobs)}, of which {len(changed)} are of copies with one to three pages changed, each "
+        f"different from its database; {dump_lines} lines; as the model prints them: {dumps_right} of "
+        f"{len(jobs)}. Pages in them, by type: "
         + tally(collections.Counter({("page type " + k if k != "FAIL" else "not read (FAIL)")
                                      if k != "record FAIL" else "records not read (FAIL)": v
-                                     for k, v in page_kinds.items()})),
+                                     for k, v in page_kinds.items()}))
+        + f". Databases made by SQLite with no schema (schema format 0, text encoding 0): {no_schema}, of "
+        f"which the tool's dump reads the header as the model does: {no_schema_read}",
+        "- `header` requests with a text encoding of 0, by schema format, as the model answers them (an "
+        "answer of the tool's that differs is a failure above): "
+        + "; ".join(f"schema format {'5 or more' if sf == 5 else sf}: "
+                    + ", ".join(f"{how} {enc0[(sf, how)]}" for how in ENC0_ANSWERS if enc0[(sf, how)])
+                    for sf in range(6) if any(enc0[(sf, how)] for how in ENC0_ANSWERS)),
     ]
     if oracle:
         lines_out.append(
             "- Agreement with SQLite (the rest are the named differences below, or failures): "
             + ", ".join(f"{what} {check.agree[what]} of {check.asked[what]}" for what in sorted(check.asked)))
+        lines_out.append(
+            "- SQLite's answers that the model's dump, read with SQLite's rules, gives, whether or not the "
+            "tool agrees (any other is a failure): "
+            + ", ".join(f"{what} {check.model_agree[what]} of {check.model_asked[what]}"
+                        for what in sorted(check.model_asked)))
         lines_out.append(f"- Payloads that spill, joined from the part the tool keeps on the page and the "
                          f"overflow pages, and read whole by `record`: {len(spill_items)}")
+        lines_out.append(
+            f"- Pages SQLite uses as overflow, freelist or pointer-map pages: {sum(check.other.values())} ("
+            + ", ".join(f"{ROLES[k]} {check.other[k]}" for k in ROLES if check.other[k])
+            + f"), of which the tool reads {sum(check.other_read.values())} as b-tree pages from their bytes ("
+            + (", ".join(f"{ROLES[k]} {check.other_read[k]}" for k in ROLES if check.other_read[k]) or "none")
+            + "). A count, not a check: SQLite gives no b-tree reading of these pages, and their lines in "
+            "the dumps are compared with the model's like every other")
     else:
         lines_out.append("- Agreement with SQLite: SQLite left out")
     lines_out += [
@@ -2891,8 +3198,8 @@ def main():
     if oracle:
         lines_out += ["## Where SQLite and the tool differ", "",
                       "Each disagreement is counted under the reason the model confirms: the model's "
-                      "reading, with SQLite's own rule, gives SQLite's answer. The first input that "
-                      "showed it is given.", ""]
+                      "dump, read with SQLite's own rules, gives SQLite's answer, and needs the rules "
+                      "named to do so. The first case that showed it is given.", ""]
         if not check.named:
             lines_out.append("No disagreement.")
         for reason, (n, example) in sorted(check.named.items(), key=lambda kv: -kv[1][0]):

@@ -3,12 +3,26 @@
 
     sqlite dump FILE
 
-  reads a database file and prints its header, then each page in turn:
-  the page as a b-tree page, or `page N FAIL` when it is not one this
-  reader accepts, and, for each cell whose payload is all on its page,
-  the record it holds. It exits with 1 when the file does not start
-  with a header this reader accepts, and with 2 on wrong arguments or a
-  file it cannot read.
+  reads a database file and prints, one per line:
+
+    header F1 ... F18         its header, as `header` gives it;
+    page N PAGE, page N FAIL  each whole page of the file in turn, N from
+                              1 to the file's length divided by the page
+                              size, as `page` gives it, or FAIL when it is
+                              not a b-tree page this reader accepts;
+    record N P ROWID VALUES,  after a page, for each cell whose payload is
+    record N P ROWID FAIL     all on its page and not empty, in the order
+                              of the cell pointers: P is the cell's
+                              pointer, ROWID its rowid (`-` on an index
+                              page), and VALUES the record the payload
+                              holds, as `record` gives it, or FAIL when it
+                              is not a record. An empty payload holds no
+                              record and gets no line.
+
+  It exits with 0. When the file does not start with a header this
+  reader accepts, it prints nothing on standard output and exits with
+  1; on wrong arguments or a file it cannot read, it prints nothing on
+  standard output and exits with 2.
 
     sqlite serve
 

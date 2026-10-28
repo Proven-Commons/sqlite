@@ -85,7 +85,7 @@ theorem examples :
 /-- Inputs the readers refuse, each for a rule:
     - a varint that ends before its last byte (1.6);
     - headers with the header string zeroed, a page size of 768, a read
-      version of 3, a usable size of 479, a text encoding of 0, and a
+      version of 3, a usable size of 479, a text encoding of 0 with a schema, and a
       maximum embedded payload fraction of 63 (1.3);
     - page 2 of a one-page file, and page 0 (1.2);
     - serial type 10, which "will never appear in a well-formed database
