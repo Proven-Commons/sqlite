@@ -1,12 +1,12 @@
-import Proofs.Bytes
+import Sqlite.Proofs.Bytes
 
 /-!
-  The header reader against `Spec.headerBytes` and `Spec.HeaderValid`.
+  The header reader against `Sqlite.Spec.headerBytes` and `Sqlite.Spec.HeaderValid`.
 -/
 
 namespace SqliteProofs
 
-open Spec Sqlite
+open Sqlite.Spec Sqlite
 
 theorem pageSizeOk_iff (n : Nat) :
     pageSizeOk n = true ↔ ∃ k, 9 ≤ k ∧ k ≤ 16 ∧ n = 2 ^ k := by

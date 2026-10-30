@@ -1,13 +1,13 @@
 /-
-  The statements of `Spec.lean`, each proved from the lemmas in the
-  other files of `Proofs/`. `lake comparator` checks that each theorem
-  here is exactly the one in `Spec.lean`.
+  The statements of `Sqlite/Spec.lean`, each proved from the lemmas in the
+  other files of `Sqlite/Proofs/`. `lake comparator` checks that each theorem
+  here is exactly the one in `Sqlite/Spec.lean`.
 -/
 
-import Proofs.Page
-import Spec.Examples
+import Sqlite.Proofs.Page
+import Sqlite.Spec.Examples
 
-namespace Spec
+namespace Sqlite.Spec
 
 theorem readVarint_iff (b : List UInt8) (v k : Nat) (rest : List UInt8) :
     Sqlite.readVarint b = some (v, k, rest) ↔
@@ -68,4 +68,4 @@ theorem rejects :
     Sqlite.readRecord [0x01] = none := by
   decide +kernel
 
-end Spec
+end Sqlite.Spec

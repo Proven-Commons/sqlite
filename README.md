@@ -10,7 +10,7 @@ This library reads three parts of the format, in Lean:
 
 Machine-checked proofs show:
 
-- **The readers accept exactly what the format says, and give back what it holds.** The varint, header, page and record readers each accept an input exactly when it is what `Spec/Defs.lean` writes down from the document, and give the values it holds. The header reader refuses every header that breaks a "must" of 1.3.
+- **The readers accept exactly what the format says, and give back what it holds.** The varint, header, page and record readers each accept an input exactly when it is what `Sqlite/Spec/Defs.lean` writes down from the document, and give the values it holds. The header reader refuses every header that breaks a "must" of 1.3.
 - **Nothing the page reader gives lies outside the file or its page.** It refuses page 0 and a page past the end of the file. On a page it gives, the usable part of the page is in the file, the cell pointer array ends before the cell content area starts, and every cell starts in that area and ends within the usable size.
 - **The local part of a payload is what the rule of 1.6 gives.** A cell keeps on its page the number of payload bytes the X, M and K rule fixes, and the 4-byte page number of the first overflow page follows exactly when the payload spills.
 
@@ -22,7 +22,7 @@ Status: in progress. The specification has not yet been approved by a reviewer a
 
 ## Use it
 
-From Lean, on `List UInt8`, with the structures of `Spec/Defs.lean`:
+From Lean, on `List UInt8`, with the structures of `Sqlite/Spec/Defs.lean`:
 
 - `Sqlite.readVarint : List UInt8 → Option (Nat × Nat × List UInt8)`: the varint at the start of the input, its length, and the rest.
 - `Sqlite.readHeader : List UInt8 → Option Header`: the database header at the start of a file.
@@ -34,16 +34,16 @@ From Lean, on `List UInt8`, with the structures of `Spec/Defs.lean`:
 
 ## What is proved
 
-The statements are in `Spec.lean`. The definitions they use are in `Spec/Defs.lean`, written from sections 1.2, 1.3, 1.6 and 2.1 of the document, and the proofs are in `Proofs/`.
+The statements are in `Sqlite/Spec.lean`. The definitions they use are in `Sqlite/Spec/Defs.lean`, written from sections 1.2, 1.3, 1.6 and 2.1 of the document, and the proofs are in `Sqlite/Proofs/`.
 
 | Claim | Theorem |
 |-------|---------|
-| The varint reader accepts exactly an input that starts with a varint of one to nine bytes, and gives its value, its length and what follows. | `Spec.readVarint_iff` |
-| The header reader accepts exactly a file that starts with the 100 bytes of a header this reader accepts, and gives that header. | `Spec.readHeader_iff` |
-| The page reader gives a page exactly when page `n` is in the file and holds it: the page header, then one cell pointer per cell, then each cell's bytes where its pointer says, within the usable size. | `Spec.readPage_iff` |
-| The usable part of every page the reader gives is in the file, and every cell pointer lies after the cell pointer array and before the end of the usable size. | `Spec.readPage_inside` |
-| The record reader accepts exactly a record of 2.1 and gives its values. | `Spec.readRecord_iff` |
-| Examples worked by hand, and the header SQLite 3.45.1 wrote for a real database, read field by field. Thirteen inputs that each break a rule are refused. | `Spec.examples`, `Spec.rejects` |
+| The varint reader accepts exactly an input that starts with a varint of one to nine bytes, and gives its value, its length and what follows. | `Sqlite.Spec.readVarint_iff` |
+| The header reader accepts exactly a file that starts with the 100 bytes of a header this reader accepts, and gives that header. | `Sqlite.Spec.readHeader_iff` |
+| The page reader gives a page exactly when page `n` is in the file and holds it: the page header, then one cell pointer per cell, then each cell's bytes where its pointer says, within the usable size. | `Sqlite.Spec.readPage_iff` |
+| The usable part of every page the reader gives is in the file, and every cell pointer lies after the cell pointer array and before the end of the usable size. | `Sqlite.Spec.readPage_inside` |
+| The record reader accepts exactly a record of 2.1 and gives its values. | `Sqlite.Spec.readRecord_iff` |
+| Examples worked by hand, and the header SQLite 3.45.1 wrote for a real database, read field by field. Thirteen inputs that each break a rule are refused. | `Sqlite.Spec.examples`, `Sqlite.Spec.rejects` |
 
 The headers this reader accepts are those whose page size is a power of two from 512 to 65536, whose read version is 1 or 2, whose usable size is at least 480, whose payload fractions are 64, 32 and 32, whose schema format is 0 to 4, whose text encoding is 1, 2 or 3 (or 0 in a database with no schema yet, as SQLite writes it), and whose 20 reserved bytes are zero.
 
@@ -82,15 +82,15 @@ python3 tests/run_tests.py
 python3 tests/plant_bugs.py
 ```
 
-`lake comparator --paranoid` builds the statements and the proofs in a sandbox. It checks that each theorem in `Proofs/` proves exactly the statement in `Spec.lean`, using only the axioms `propext`, `Classical.choice`, and `Quot.sound`, and replays it through every kernel shipped with Lean.
+`lake comparator --paranoid` builds the statements and the proofs in a sandbox. It checks that each theorem in `Sqlite/Proofs/` proves exactly the statement in `Sqlite/Spec.lean`, using only the axioms `propext`, `Classical.choice`, and `Quot.sound`, and replays it through every kernel shipped with Lean.
 
 ## Layout
 
 - `Sqlite/Basic.lean`: the code under proof.
-- `Spec.lean`: the statements, with `sorry` for proofs. A reviewer approves this file.
-- `Spec/Defs.lean`: the definitions the statements use, written from the document.
-- `Spec/Examples.lean`: the inputs of the examples: a header SQLite wrote, and a one-page file.
-- `Proofs.lean` and `Proofs/`: the proofs.
+- `Sqlite/Spec.lean`: the statements, with `sorry` for proofs. A reviewer approves this file.
+- `Sqlite/Spec/Defs.lean`: the definitions the statements use, written from the document.
+- `Sqlite/Spec/Examples.lean`: the inputs of the examples: a header SQLite wrote, and a one-page file.
+- `Sqlite/Proofs.lean` and `Sqlite/Proofs/`: the proofs.
 - `Main.lean`: the command-line tool the tests drive.
 - `lakefile.toml`: the build. It names the package and its version, its libraries and executable, and the default targets, and sets nothing else.
 - `comparator.json`: which theorems `lake comparator` checks, and which axioms it allows.

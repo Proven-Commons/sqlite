@@ -14,7 +14,7 @@ spec_authors = ["claude", "fdn-0", "zero-aska"]
 entry_points = ["Main.lean"]
 
 [spec]
-files = ["SPEC.md", "Spec.lean", "Spec/Defs.lean", "Spec/Examples.lean"]
+files = ["SPEC.md", "Sqlite/Spec.lean", "Sqlite/Spec/Defs.lean", "Sqlite/Spec/Examples.lean"]
 # The code under proof: the functions the statements are about.
 code = ["Sqlite.readVarint", "Sqlite.readHeader", "Sqlite.readPage", "Sqlite.readRecord",
         "Sqlite.localOf"]

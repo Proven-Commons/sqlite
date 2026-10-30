@@ -8,19 +8,19 @@ The SQLite database file format ("Database File Format", https://www.sqlite.org/
 
 It does not follow overflow chains, read the freelist, pointer-map pages or the WAL, or check that the pages form a b-tree. "Not in this slice" below lists what else it leaves out.
 
-A reviewer who did not write this specification approves it. The approval also covers `Spec.lean`, `Spec/Defs.lean`, `Spec/Examples.lean`, and the other files that `bar.toml` lists.
+A reviewer who did not write this specification approves it. The approval also covers `Sqlite/Spec.lean`, `Sqlite/Spec/Defs.lean`, `Sqlite/Spec/Examples.lean`, and the other files that `bar.toml` lists.
 
 ## Varints
 
-`Spec.Varint` is a varint of 1.6: "either zero or more bytes which have the high-order bit set followed by a single byte with the high-order bit clear, or nine bytes, whichever is shorter". So one to nine bytes, and a ninth byte may have its high bit set. `Spec.varintValue` is its value: "The lower seven bits of each of the first eight bytes and all 8 bits of the ninth byte are used to reconstruct the 64-bit twos-complement integer", most significant first. The value is kept as a number from 0 to 2^64 - 1; `Spec.toInt64` reads it as a signed 64-bit integer where 2.1 and 1.6 ask for one (a rowid).
+`Sqlite.Spec.Varint` is a varint of 1.6: "either zero or more bytes which have the high-order bit set followed by a single byte with the high-order bit clear, or nine bytes, whichever is shorter". So one to nine bytes, and a ninth byte may have its high bit set. `Sqlite.Spec.varintValue` is its value: "The lower seven bits of each of the first eight bytes and all 8 bits of the ninth byte are used to reconstruct the 64-bit twos-complement integer", most significant first. The value is kept as a number from 0 to 2^64 - 1; `Sqlite.Spec.toInt64` reads it as a signed 64-bit integer where 2.1 and 1.6 ask for one (a rowid).
 
 **`Sqlite.readVarint`** accepts exactly the inputs that start with a varint, and gives its value, its length and the bytes after it.
 
 ## The database header
 
-`Spec.Header` has the fields of the table in 1.3, in its order, and `Spec.headerBytes` writes them as their 100 bytes: the header string "SQLite format 3" and a NUL, the page size in two bytes (65536 written as 1), the file format write and read versions, the reserved space, the payload fractions 64, 32 and 32, the 4-byte fields, 20 zero bytes, the version-valid-for number and the SQLite version number. Every multibyte field is big-endian.
+`Sqlite.Spec.Header` has the fields of the table in 1.3, in its order, and `Sqlite.Spec.headerBytes` writes them as their 100 bytes: the header string "SQLite format 3" and a NUL, the page size in two bytes (65536 written as 1), the file format write and read versions, the reserved space, the payload fractions 64, 32 and 32, the 4-byte fields, 20 zero bytes, the version-valid-for number and the SQLite version number. Every multibyte field is big-endian.
 
-`Spec.HeaderValid` says which headers this reader accepts. Each rule is a "must" of 1.3, or a value 1.3 says a reader cannot use:
+`Sqlite.Spec.HeaderValid` says which headers this reader accepts. Each rule is a "must" of 1.3, or a value 1.3 says a reader cannot use:
 
 - the page size is a power of two from 512 to 65536 (1.3.2);
 - the read version is 1 or 2: "If a database file with a read version greater than 2 is encountered, then that database cannot be read" (1.3.3); any write version is accepted, since it only makes the file read-only;
@@ -31,37 +31,37 @@ A reviewer who did not write this specification approves it. The approval also c
 - the 20 bytes "reserved for expansion" are zero (1.3.17);
 - every field is small enough for its bytes.
 
-**`Sqlite.readHeader`** accepts exactly the inputs that start with `Spec.headerBytes` of a header in `Spec.HeaderValid`, and gives that header. Since `Spec.headerBytes` is a function of the header, each accepted header comes from exactly one string of 100 bytes.
+**`Sqlite.readHeader`** accepts exactly the inputs that start with `Sqlite.Spec.headerBytes` of a header in `Sqlite.Spec.HeaderValid`, and gives that header. Since `Sqlite.Spec.headerBytes` is a function of the header, each accepted header comes from exactly one string of 100 bytes.
 
 ## B-tree pages
 
-A file is a list of pages of the page size, numbered from 1 (1.2); `Spec.pageOf` is page `n`. Page 1 starts with the database header, so its b-tree page header starts at offset 100; on every other page it starts at 0 (1.6).
+A file is a list of pages of the page size, numbered from 1 (1.2); `Sqlite.Spec.pageOf` is page `n`. Page 1 starts with the database header, so its b-tree page header starts at offset 100; on every other page it starts at 0 (1.6).
 
-**The page header.** `Spec.PageHeader` is the b-tree page header of 1.6: the page type (2, 5, 10 or 13: interior index, interior table, leaf index, leaf table), the first freeblock, the number of cells, the start of the cell content area ("A zero value for this integer is interpreted as 65536"), the number of fragmented free bytes, and the right-most pointer, which interior pages have and leaf pages do not. `Spec.pageHeaderBytes` writes it as its 8 bytes, or 12 on an interior page.
+**The page header.** `Sqlite.Spec.PageHeader` is the b-tree page header of 1.6: the page type (2, 5, 10 or 13: interior index, interior table, leaf index, leaf table), the first freeblock, the number of cells, the start of the cell content area ("A zero value for this integer is interpreted as 65536"), the number of fragmented free bytes, and the right-most pointer, which interior pages have and leaf pages do not. `Sqlite.Spec.pageHeaderBytes` writes it as its 8 bytes, or 12 on an interior page.
 
 **The cell pointer array.** One 2-byte offset per cell, from the start of the page, after the page header.
 
-**Cells.** `Spec.CellEncodes` writes each kind of cell of "B-tree Cell Format":
+**Cells.** `Sqlite.Spec.CellEncodes` writes each kind of cell of "B-tree Cell Format":
 
 - a table leaf cell: the payload size as a varint, the rowid as a varint, the part of the payload kept on the page, and the first overflow page when the payload spills;
 - a table interior cell: a 4-byte left child page number and the rowid as a varint;
 - an index leaf cell: the payload size, the part kept on the page, and the overflow page;
 - an index interior cell: the left child, the payload size, the part kept on the page, and the overflow page.
 
-How much of a payload of `P` bytes stays on the page is `Spec.localSize`, the rule of 1.6 in its own words: with `U` the usable size, `X` is `U-35` on a table leaf page and `((U-12)*64/255)-23` on an index page, `M` is `((U-12)*32/255)-23`, and `K` is `M+((P-M)%(U-4))`. All `P` bytes stay when `P<=X`; else the first `K` when `K<=X`; else the first `M`. When some of the payload spills, a 4-byte page number follows the part on the page.
+How much of a payload of `P` bytes stays on the page is `Sqlite.Spec.localSize`, the rule of 1.6 in its own words: with `U` the usable size, `X` is `U-35` on a table leaf page and `((U-12)*64/255)-23` on an index page, `M` is `((U-12)*32/255)-23`, and `K` is `M+((P-M)%(U-4))`. All `P` bytes stay when `P<=X`; else the first `K` when `K<=X`; else the first `M`. When some of the payload spills, a 4-byte page number follows the part on the page.
 
-`Spec.PageEncodes` says that page `n`, with the file's header, holds a page:
+`Sqlite.Spec.PageEncodes` says that page `n`, with the file's header, holds a page:
 
 - the page header is valid: every field fits its bytes, and the right-most pointer is there exactly on interior pages;
 - the page header and then the cell pointer array are at the page header's offset, one pointer per cell;
 - the array ends no later than the cell content area starts, and that area starts no later than the end of the usable size;
-- each cell starts in the cell content area, its bytes, at the offset its pointer gives, are those of `Spec.CellEncodes`, and they end within the usable size, before the reserved space.
+- each cell starts in the cell content area, its bytes, at the offset its pointer gives, are those of `Sqlite.Spec.CellEncodes`, and they end within the usable size, before the reserved space.
 
-**`Sqlite.readPage`** gives a page exactly when page `n` is in the file and holds it, as `Spec.PageEncodes` says; it refuses page 0 and a page past the end of the file. So nothing it gives lies outside the file or its page: the usable part of the page is in the file, and every cell starts after the cell pointer array and ends within the usable size. A cell's payload is its local part only, with the number of the first overflow page when the payload spills.
+**`Sqlite.readPage`** gives a page exactly when page `n` is in the file and holds it, as `Sqlite.Spec.PageEncodes` says; it refuses page 0 and a page past the end of the file. So nothing it gives lies outside the file or its page: the usable part of the page is in the file, and every cell starts after the cell pointer array and ends within the usable size. A cell's payload is its local part only, with the number of the first overflow page when the payload spills.
 
 ## Records
 
-A record (2.1) is a header and a body. The header is a varint giving the size of the header in bytes, the varint itself included, then one varint per column, its serial type. The body is the contents of the columns, one after another. `Spec.contentSize` gives the content size of each serial type, from the table in 2.1, and `Spec.valueOf` the value:
+A record (2.1) is a header and a body. The header is a varint giving the size of the header in bytes, the varint itself included, then one varint per column, its serial type. The body is the contents of the columns, one after another. `Sqlite.Spec.contentSize` gives the content size of each serial type, from the table in 2.1, and `Sqlite.Spec.valueOf` the value:
 
 | Serial type | Content size | Value |
 |---|---|---|
@@ -73,23 +73,23 @@ A record (2.1) is a header and a body. The header is a varint giving the size of
 | N ≥ 12, even | (N-12)/2 | a BLOB |
 | N ≥ 13, odd | (N-13)/2 | a string, as its bytes in the database's text encoding |
 
-`Spec.RecordEncodes vs p` says that `p` is a record of the values `vs`: at least one column ("one or more additional varints, one per column"), a header size that is the size of the header, and a body that is exactly the contents of the columns.
+`Sqlite.Spec.RecordEncodes vs p` says that `p` is a record of the values `vs`: at least one column ("one or more additional varints, one per column"), a header size that is the size of the header, and a body that is exactly the contents of the columns.
 
 **`Sqlite.readRecord`** accepts exactly the records and gives their values.
 
 ## What must always hold
 
-Each property is a theorem in `Spec.lean`, under the name given.
+Each property is a theorem in `Sqlite/Spec.lean`, under the name given.
 
 | Property | Theorem |
 |----------|---------|
-| The varint reader accepts exactly an input that starts with a varint, and gives its value, its length and what follows. | `Spec.readVarint_iff` |
-| The header reader accepts exactly a file that starts with the 100 bytes of a header in `Spec.HeaderValid`, and gives that header. | `Spec.readHeader_iff` |
-| The page reader gives a page exactly when page `n` is in the file and holds it, as `Spec.PageEncodes` says. | `Spec.readPage_iff` |
-| The usable part of every page the reader gives is in the file, and every cell pointer lies after the cell pointer array and before the end of the usable size. | `Spec.readPage_inside` |
-| The record reader accepts exactly a record and gives its values. | `Spec.readRecord_iff` |
-| Examples worked by hand: varints of one, two and nine bytes; the local size of a payload of 10000 bytes on a table leaf page of usable size 4096; a record of an integer and a string; the header SQLite 3.45.1 wrote for a database, field by field; and a one-page file with one row. | `Spec.examples` |
-| Inputs that each break a rule: a varint cut short; a header without its header string, with a page size of 768, a read version of 3, a usable size of 479, a text encoding of 0 with a schema, or a payload fraction of 63; page 2 of a one-page file, and page 0; serial type 10, a body longer than its columns, a header size larger than the record, and a record with no column. | `Spec.rejects` |
+| The varint reader accepts exactly an input that starts with a varint, and gives its value, its length and what follows. | `Sqlite.Spec.readVarint_iff` |
+| The header reader accepts exactly a file that starts with the 100 bytes of a header in `Sqlite.Spec.HeaderValid`, and gives that header. | `Sqlite.Spec.readHeader_iff` |
+| The page reader gives a page exactly when page `n` is in the file and holds it, as `Sqlite.Spec.PageEncodes` says. | `Sqlite.Spec.readPage_iff` |
+| The usable part of every page the reader gives is in the file, and every cell pointer lies after the cell pointer array and before the end of the usable size. | `Sqlite.Spec.readPage_inside` |
+| The record reader accepts exactly a record and gives its values. | `Sqlite.Spec.readRecord_iff` |
+| Examples worked by hand: varints of one, two and nine bytes; the local size of a payload of 10000 bytes on a table leaf page of usable size 4096; a record of an integer and a string; the header SQLite 3.45.1 wrote for a database, field by field; and a one-page file with one row. | `Sqlite.Spec.examples` |
+| Inputs that each break a rule: a varint cut short; a header without its header string, with a page size of 768, a read version of 3, a usable size of 479, a text encoding of 0 with a schema, or a payload fraction of 63; page 2 of a one-page file, and page 0; serial type 10, a body longer than its columns, a header size larger than the record, and a record with no column. | `Sqlite.Spec.rejects` |
 
 ## Not in this slice
 

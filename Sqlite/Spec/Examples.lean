@@ -1,10 +1,10 @@
-import Spec.Defs
+import Sqlite.Spec.Defs
 
 /-!
-  The inputs of `Spec.examples` and `Spec.rejects`.
+  The inputs of `Sqlite.Spec.examples` and `Sqlite.Spec.rejects`.
 -/
 
-namespace Spec
+namespace Sqlite.Spec
 
 /-- The first 100 bytes of a database that SQLite 3.45.1 wrote: 512-byte
     pages, one table of six rows, three pages in all. -/
@@ -34,4 +34,4 @@ def onePageFile : List UInt8 :=
   sqliteHeaderBytes ++ [0x0D, 0x00, 0x00, 0x00, 0x01, 0x01, 0xFB, 0x00] ++ [0x01, 0xFB] ++
     List.replicate 397 0 ++ [0x03, 0x01, 0x02, 0x01, 0x05]
 
-end Spec
+end Sqlite.Spec

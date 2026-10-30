@@ -6,7 +6,7 @@ import Sqlite
 
 namespace SqliteProofs
 
-open Spec Sqlite
+open Sqlite.Spec Sqlite
 
 theorem take?_eq (w : Nat) (b c r : List UInt8) :
     take? w b = some (c, r) ↔ c.length = w ∧ b = c ++ r := by

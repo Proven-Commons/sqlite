@@ -1,13 +1,13 @@
-import Proofs.Varint
-import Proofs.Header
+import Sqlite.Proofs.Varint
+import Sqlite.Proofs.Header
 
 /-!
-  The record reader against `Spec.RecordEncodes`.
+  The record reader against `Sqlite.Spec.RecordEncodes`.
 -/
 
 namespace SqliteProofs
 
-open Spec Sqlite
+open Sqlite.Spec Sqlite
 
 theorem guard_of (p : Prop) [Decidable p] (hp : p) : (guard p : Option Unit) = some () :=
   (guard_some p ()).mpr hp

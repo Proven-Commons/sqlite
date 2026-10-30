@@ -60,7 +60,7 @@
 
 import Sqlite
 
-open Sqlite Spec
+open Sqlite Sqlite.Spec
 
 def hexValue (c : Char) : Option Nat :=
   if '0' ≤ c ∧ c ≤ '9' then some (c.toNat - '0'.toNat)

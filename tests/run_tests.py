@@ -25,7 +25,7 @@ header of Main.lean). Its answers are checked two ways.
      column, and the body.
    Where 1.3 says a field "must" hold a value, or a page or record could
    be read more loosely than 1.6 and 2.1 say, the model follows the
-   choices Spec/Defs.lean writes down for this reader, which are
+   choices Sqlite/Spec/Defs.lean writes down for this reader, which are
    stricter than SQLite in places:
    - HeaderValid: the header string; a page size that is a power of two
      from 512 to 65536; a read version of 1 or 2 (any write version); a
@@ -42,7 +42,7 @@ header of Main.lean). Its answers are checked two ways.
      the columns, no byte more; at least one column; every serial type
      ending within the header.
    The `local` request is `localSize`, in natural numbers as
-   Spec/Defs.lean computes it, so a difference below 0 is 0 and a
+   Sqlite/Spec/Defs.lean computes it, so a difference below 0 is 0 and a
    remainder by 0 is the number itself. The model prints what `sqlite
    dump` prints by the header of Main.lean, which gives the format, and
    the model's own answers to the requests, with no other rule:
@@ -60,7 +60,7 @@ header of Main.lean). Its answers are checked two ways.
    model accepts, it prints nothing on standard output and exits with
    1; on wrong arguments or a file it cannot read, it prints nothing on
    standard output and exits with 2. The model must give the answers
-   Spec.lean states in `examples` and `rejects`. Every answer of the
+   Sqlite/Spec.lean states in `examples` and `rejects`. Every answer of the
    tool must equal the model's. The record counts, for each kind of
    request, why the model refuses what it refuses.
 
@@ -133,7 +133,7 @@ header of Main.lean). Its answers are checked two ways.
      used to create the main database" (pragma.html), UTF-8 by default
      for a connection opened with sqlite3_open_v2 (c3ref/open.html), as
      the sqlite3 module opens it. The tool and the model read such a
-     header, as Spec/Defs.lean allows; this rule is about PRAGMA
+     header, as Sqlite/Spec/Defs.lean allows; this rule is about PRAGMA
      encoding alone.
    Any other disagreement is a failure. The record gives each named
    difference with its count and the first case. If the installed
@@ -209,7 +209,7 @@ Inputs come from a recorded seed:
   and 512, each page size less some reserved bytes, and huge ones) and
   payload sizes around X, M and K, every payload size up to three pages
   for two usable sizes, and random ones;
-- the inputs of Spec.lean's `examples` and `rejects`;
+- the inputs of Sqlite/Spec.lean's `examples` and `rejects`;
 - malformed requests, which the tool must answer with `error`, and odd
   but well-formed ones;
 - the command line: `sqlite dump` on a database, on a file with no
@@ -272,7 +272,7 @@ EXE = None
 
 # ---------------------------------------------------------------------
 # The model: "Database File Format", sections 1.3, 1.6 and 2.1, with the
-# choices of Spec/Defs.lean.
+# choices of Sqlite/Spec/Defs.lean.
 
 MAGIC = b"SQLite format 3\x00"
 PAGE_SIZES = (512, 1024, 2048, 4096, 8192, 16384, 32768, 65536)
@@ -287,7 +287,7 @@ H_PAGE_SIZE, H_WRITE, H_READ, H_RESERVED, H_CHANGE, H_SIZE, H_TRUNK, H_FREE, H_C
 
 
 def nsub(a, b):
-    """a - b in natural numbers, as Spec/Defs.lean computes it."""
+    """a - b in natural numbers, as Sqlite/Spec/Defs.lean computes it."""
     return a - b if a > b else 0
 
 
@@ -335,7 +335,7 @@ WHY_H_FRACTIONS = "payload fractions other than 64, 32 and 32 (1.3.5)"
 WHY_H_USABLE = "a usable size below 480 (1.3.4)"
 WHY_H_SCHEMA = "a schema format above 4 (1.3.10)"
 WHY_H_ENCODING = "a text encoding other than 0, 1, 2 and 3 (1.3.13)"
-WHY_H_ENCODING_0 = ("a text encoding of 0 with a schema format other than 0 (1.3.13; Spec/Defs.lean "
+WHY_H_ENCODING_0 = ("a text encoding of 0 with a schema format other than 0 (1.3.13; Sqlite/Spec/Defs.lean "
                     "HeaderValid allows 0 only with a schema format of 0)")
 WHY_H_EXPANSION = "the 20 bytes reserved for expansion not all zero (1.3.17)"
 
@@ -553,7 +553,7 @@ WHY_R_TYPE_PAST = "a serial type runs past the end of the header (2.1)"
 WHY_R_NO_COLUMN = "no column (2.1: \"one or more additional varints\")"
 WHY_R_RESERVED = "serial type 10 or 11, \"Reserved for internal use\" (2.1)"
 WHY_R_SHORT = "the body ends before the last column (2.1)"
-WHY_R_LONG = "bytes after the last column (Spec/Defs.lean RecordEncodes)"
+WHY_R_LONG = "bytes after the last column (Sqlite/Spec/Defs.lean RecordEncodes)"
 
 
 def read_record(p):
@@ -722,9 +722,9 @@ def model_line(raw):
 
 
 # ---------------------------------------------------------------------
-# Spec.lean's `examples` and `rejects`, with the answers they state.
+# Sqlite/Spec.lean's `examples` and `rejects`, with the answers they state.
 
-# Spec/Examples.lean `sqliteHeaderBytes`: the first 100 bytes of a
+# Sqlite/Spec/Examples.lean `sqliteHeaderBytes`: the first 100 bytes of a
 # database SQLite 3.45.1 wrote.
 SPEC_HEADER = bytes([
     0x53, 0x51, 0x4C, 0x69, 0x74, 0x65, 0x20, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x20, 0x33, 0x00,
@@ -2722,7 +2722,7 @@ def every_byte_value(label, data):
 def inputs(seed, count, dbs):
     rng = random.Random(seed)
     for op, args, _ in SPEC_CASES:
-        yield ("Spec.lean's examples and rejects", op, args)
+        yield ("Sqlite/Spec.lean's examples and rejects", op, args)
     yield from varint_sets(rng)
     for _ in range(count):
         yield ("random bytes", "varint", [random_varint(rng)])
@@ -2878,7 +2878,7 @@ def main():
     if args.no_build:
         built = "`.lake/build/bin/sqlite` as it was, not rebuilt (`--no-build`)"
         newest = max(p.stat().st_mtime for p in (ROOT / "Main.lean", ROOT / "Sqlite" / "Basic.lean",
-                                                   ROOT / "Spec" / "Defs.lean"))
+                                                   ROOT / "Sqlite" / "Spec" / "Defs.lean"))
         if not BUILT_EXE.exists():
             give_up("`--no-build`, and there is no .lake/build/bin/sqlite")
         if BUILT_EXE.stat().st_mtime < newest:
@@ -2983,7 +2983,7 @@ def main():
             if op == "header" and len(a[0]) >= 100 and be(a[0][56:60]) == 0:
                 enc0[(min(5, be(a[0][44:48])), ENC0_ANSWERS[0] if why is None else ENC0_ANSWERS[1]
                       if why == WHY_H_ENCODING_0 else ENC0_ANSWERS[2])] += 1
-            if label == "Spec.lean's examples and rejects":
+            if label == "Sqlite/Spec.lean's examples and rejects":
                 spec_right += want == SPEC_CASES[i][2]
                 if want != SPEC_CASES[i][2]:
                     failures.append((f"the model on {short(request(op, a), 120)}", SPEC_CASES[i][2], want))
@@ -3126,7 +3126,7 @@ def main():
         "- By kind: " + ", ".join(f"{k} {v}" for k, v in sorted(by_label.items())),
         "- Requests: " + ", ".join(f"`{op}` {n}" for op, n in sorted(by_op.items())),
         f"- Answers that differ from the model: {differ_model}",
-        f"- Spec.lean's `examples` and `rejects`, answered by the model as Spec.lean states them: "
+        f"- Sqlite/Spec.lean's `examples` and `rejects`, answered by the model as Sqlite/Spec.lean states them: "
         f"{spec_right} of {len(SPEC_CASES)}",
     ]
     for op, name in (("varint", "Varints"), ("header", "Headers"), ("page", "Pages asked with `page`"),

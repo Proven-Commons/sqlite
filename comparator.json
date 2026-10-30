@@ -1,9 +1,18 @@
 {
-  "challenge_module": "Spec",
-  "solution_module": "Proofs",
+  "challenge_module": "Sqlite.Spec",
+  "solution_module": "Sqlite.Proofs",
   "theorem_names": [
-    "Spec.readVarint_iff", "Spec.readHeader_iff", "Spec.readPage_iff", "Spec.readPage_inside",
-    "Spec.readRecord_iff", "Spec.examples", "Spec.rejects"
+    "Sqlite.Spec.readVarint_iff",
+    "Sqlite.Spec.readHeader_iff",
+    "Sqlite.Spec.readPage_iff",
+    "Sqlite.Spec.readPage_inside",
+    "Sqlite.Spec.readRecord_iff",
+    "Sqlite.Spec.examples",
+    "Sqlite.Spec.rejects"
   ],
-  "permitted_axioms": ["propext", "Quot.sound", "Classical.choice"]
+  "permitted_axioms": [
+    "propext",
+    "Quot.sound",
+    "Classical.choice"
+  ]
 }

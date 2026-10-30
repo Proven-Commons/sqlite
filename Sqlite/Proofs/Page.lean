@@ -1,15 +1,15 @@
-import Proofs.Varint
-import Proofs.Header
-import Proofs.Record
+import Sqlite.Proofs.Varint
+import Sqlite.Proofs.Header
+import Sqlite.Proofs.Record
 
 /-!
-  The page reader against `Spec.PageEncodes`: the page header, the cell
+  The page reader against `Sqlite.Spec.PageEncodes`: the page header, the cell
   pointers, payloads, cells, and the page.
 -/
 
 namespace SqliteProofs
 
-open Spec Sqlite
+open Sqlite.Spec Sqlite
 
 theorem pageType?_eq (n : Nat) (t : PageType) : pageType? n = some t ↔ t.code = n := by
   constructor

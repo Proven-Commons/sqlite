@@ -1,18 +1,18 @@
 import Sqlite
-import Spec.Defs
-import Spec.Examples
+import Sqlite.Spec.Defs
+import Sqlite.Spec.Examples
 
 /-!
   The statements a reviewer approves. Each `sorry` is proved under the
-  same name in `Proofs/`, and `lake comparator` checks that each proof
+  same name in `Sqlite/Proofs/`, and `lake comparator` checks that each proof
   proves exactly the statement here.
 
-  `Spec/Defs.lean` writes the file format down from "Database File
+  `Sqlite/Spec/Defs.lean` writes the file format down from "Database File
   Format" (https://www.sqlite.org/fileformat2.html). The code is in
   `Sqlite/Basic.lean`.
 -/
 
-namespace Spec
+namespace Sqlite.Spec
 
 /-- The varint reader accepts exactly a varint of 1.6 at the start of
     its input, and gives its value, its length and what follows. -/
@@ -107,4 +107,4 @@ theorem rejects :
     Sqlite.readRecord [0x01] = none := by
   sorry
 
-end Spec
+end Sqlite.Spec

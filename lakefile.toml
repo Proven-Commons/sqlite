@@ -1,16 +1,18 @@
 name = "sqlite"
 license = "Apache-2.0"
 version = "0.1.0"
-defaultTargets = ["Sqlite", "Spec", "Proofs", "sqlite"]
+defaultTargets = ["Sqlite", "SqliteSpec", "SqliteProofs", "sqlite"]
 
 [[lean_lib]]
 name = "Sqlite"
 
 [[lean_lib]]
-name = "Spec"
+name = "SqliteSpec"
+roots = ["Sqlite.Spec"]
 
 [[lean_lib]]
-name = "Proofs"
+name = "SqliteProofs"
+roots = ["Sqlite.Proofs"]
 
 [[lean_exe]]
 name = "sqlite"

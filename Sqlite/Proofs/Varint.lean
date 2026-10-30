@@ -1,12 +1,12 @@
-import Proofs.Bytes
+import Sqlite.Proofs.Bytes
 
 /-!
-  The varint reader against `Spec.Varint` and `Spec.varintValue`.
+  The varint reader against `Sqlite.Spec.Varint` and `Sqlite.Spec.varintValue`.
 -/
 
 namespace SqliteProofs
 
-open Spec Sqlite
+open Sqlite.Spec Sqlite
 
 /-- The seven-bit digits of the bytes, after `acc`. -/
 def f7 (acc : Nat) (bs : List UInt8) : Nat :=

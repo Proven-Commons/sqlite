@@ -8,7 +8,7 @@
   This file uses nothing from the code.
 -/
 
-namespace Spec
+namespace Sqlite.Spec
 
 /-! ## Integers -/
 
@@ -335,4 +335,4 @@ def RecordEncodes (vs : List Value) (p : List UInt8) : Prop :=
   vs ≠ [] ∧ ∃ hs ts cs, Varint hs ∧ varintValue hs = hs.length + ts.flatten.length ∧
     ColumnsEncode ts cs vs ∧ p = hs ++ ts.flatten ++ cs.flatten
 
-end Spec
+end Sqlite.Spec

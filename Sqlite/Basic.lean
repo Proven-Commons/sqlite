@@ -1,16 +1,16 @@
 /-
   Reading the SQLite database file format: the database header, one
   b-tree page with its cells, and records. The structures the reader
-  gives back are those of `Spec/Defs.lean`, and so is the header string;
+  gives back are those of `Sqlite/Spec/Defs.lean`, and so is the header string;
   the functions here are the code under proof, and share nothing else
   with the specification.
 -/
 
-import Spec.Defs
+import Sqlite.Spec.Defs
 
 namespace Sqlite
 
-open Spec (Header PageType PageHeader Cell Page Value)
+open Sqlite.Spec (Header PageType PageHeader Cell Page Value)
 
 /-- Splits off the first `w` bytes, if there are that many. Measures
     only those `w`. -/
@@ -51,7 +51,7 @@ def pageSizeOk (n : Nat) : Bool :=
     the file does not start with one this reader accepts. -/
 def readHeader (file : List UInt8) : Option Header := do
   let (m, r) ← take? 16 file
-  guard (m = Spec.magic)
+  guard (m = Sqlite.Spec.magic)
   let (ps, r) ← readBE 2 r
   let pageSize := if ps = 1 then 65536 else ps
   let (wv, r) ← readBE 1 r
